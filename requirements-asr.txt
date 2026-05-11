@@ -1,0 +1,6 @@
+# 语音链路（PC 开发）：与 requirements.txt 分离，按需安装
+openai-whisper>=20231117
+PyYAML>=6.0
+numpy>=1.22
+sounddevice>=0.4.6
+# whisper 依赖 ffmpeg，请在本机安装 ffmpeg 并加入 PATH

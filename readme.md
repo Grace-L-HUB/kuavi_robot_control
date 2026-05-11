@@ -62,12 +62,21 @@
 │   └── config/
 │       └── robot_config.yaml      # 机器人IP、端口等配置
 │
-├── vision_llm/                    # AI模型推理代码
-│   ├── detection.py               # YOLO目标检测
-│   ├── speech_recognition.py      # Whisper语音识别
-│   ├── semantic_parser.py         # 语义解析
-│   ├── coordinate_transform.py    # 坐标变换（像素→3D）
-│   └── utils.py                   # 图像预处理工具
+├── vision_lim/                    # AI模型推理代码（语音/视觉/坐标）
+│   ├── asr_backends/              # ASR 可替换后端（Whisper 本地 / 昇腾占位）
+│   ├── detection.py               # YOLO目标检测（待补充）
+│   ├── speech_recognition.py      # 语音识别入口（读 config 选择后端）
+│   ├── semantic_parser.py         # 语义解析（当前为规则版）
+│   ├── audio_record.py            # 麦克风录制为 WAV（16k 单声道）
+│   ├── voice_pipeline.py          # 语音文件→任务 JSON（串 ASR + NLU）
+│   ├── coordinate_transform.py    # 坐标变换（像素→3D）（待补充）
+│   └── utils.py                   # 图像预处理工具（待补充）
+│
+├── config/
+│   └── asr.yaml                   # ASR 后端与 Whisper 参数（上板后改 backend）
+├── scripts/
+│   └── demo_voice_pipeline.py     # 音频→文本→JSON 演示脚本
+├── samples/                       # 放置测试用 wav（可与 PC/板子共用）
 │
 ├── ascend_models/                 # 昇腾.om格式模型文件
 │   ├── yolov8n.om                 # YOLO目标检测模型

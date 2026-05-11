@@ -1,0 +1,6 @@
+# 语音识别后端。开发阶段使用 whisper_local；上板后改为 ascend_om 并实现 AscendOmBackend。
+asr:
+  backend: whisper_local # whisper_local | ascend_om
+  whisper:
+    model_size: tiny # tiny, base, small, ...
+    language: zh # 可设为 null 让 Whisper 自检测
