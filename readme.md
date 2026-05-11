@@ -67,6 +67,8 @@
 │   ├── detection.py               # YOLO目标检测（待补充）
 │   ├── speech_recognition.py      # 语音识别入口（读 config 选择后端）
 │   ├── semantic_parser.py         # 语义解析（当前为规则版）
+│   ├── audio_record.py            # 麦克风录制为 WAV（16k 单声道）
+│   ├── voice_pipeline.py          # 语音文件→任务 JSON（串 ASR + NLU）
 │   ├── coordinate_transform.py    # 坐标变换（像素→3D）（待补充）
 │   └── utils.py                   # 图像预处理工具（待补充）
 │
