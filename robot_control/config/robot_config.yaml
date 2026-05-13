@@ -1,0 +1,100 @@
+# config/robot_config.yaml
+robot:
+  name: "wheeled_robot"
+
+  # WebSocket 配置
+  websocket:
+    ip: "192.168.1.100"
+    port: 8080
+    timeout: 8
+    reconnect_interval: 5
+
+  # ROS 配置
+  ros:
+    master_uri: "http://192.168.1.100:11311"
+    arm_topic: "/kuavo_arm_traj"
+    gripper_service: "/control_robot_leju_claw"
+    control_mode_service: "/arm_traj_change_mode"
+
+# 头部控制参数
+head:
+  topic: "/robot_head_motion_data"
+  look_down_pitch: -20           # 低头观察的俯仰角（度）
+  settle_time: 0.5               # 注视指令后等待稳定时间（秒）
+  look_at_left_hand:
+    yaw: 15
+    pitch: -15
+  look_at_right_hand:
+    yaw: -15
+    pitch: -15
+
+# IK/FK 服务配置
+ik:
+  service: "/ik/two_arm_hand_pose_cmd_srv"
+  fk_service: "/ik/fk_srv"
+  service_timeout: 5.0
+  default_orientation:           # 掌心朝下的四元数 [qx, qy, qz, qw]
+    - 0.0
+    - -0.70682518
+    - 0.0
+    - 0.70738827
+
+# 手臂轨迹参数
+arm:
+  target_poses_topic: "/kuavo_arm_target_poses"
+  traj_topic: "/kuavo_arm_traj"
+  control_mode_service: "/arm_traj_change_mode"
+  default_duration: 2.0          # 正常运动时间（秒）
+  slow_duration: 3.0             # 慢速运动（抓取下降）
+  fast_duration: 1.0             # 快速运动
+
+# 升降模组
+lift:
+  max_height: 0.5                # 最大升降高度（米）
+  default_speed: 0.1             # 升降速度（米/秒）
+
+# 预定义手臂姿态（14关节角度，单位：度）
+# 关节排列: l_arm_pitch, l_arm_roll, l_arm_yaw, l_forearm_pitch,
+#          l_hand_yaw, l_hand_pitch, l_hand_roll,
+#          r_arm_pitch, r_arm_roll, r_arm_yaw, r_forearm_pitch,
+#          r_hand_yaw, r_hand_pitch, r_hand_roll
+poses:
+  home:
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+  ready:
+    [-15, 10, 0, -30, 0, -15, 0, -15, -10, 0, -30, 0, -15, 0]
+  pre_grasp_front:
+    [-45, 15, 0, -60, 0, -30, 0, -45, -15, 0, -60, 0, -30, 0]
+  grasp_low:
+    [-60, 15, 0, -45, 0, -45, 0, -60, -15, 0, -45, 0, -45, 0]
+  transport:
+    [-30, 20, 0, -90, 0, -30, 0, -30, -20, 0, -90, 0, -30, 0]
+  deliver_front:
+    [-45, 15, 0, -60, 0, -30, 0, -45, -15, 0, -60, 0, -30, 0]
+  present:
+    [-30, 30, 0, -60, 0, -20, 0, -30, -30, 0, -60, 0, -20, 0]
+
+# 动作状态机参数
+actions:
+  approach_distance: 0.3         # 接近距离（米）
+  pre_grasp_height: 0.15         # 预抓取高度偏移（米）
+  lift_height: 0.20              # 抓取后抬起高度（米）
+  grasp_verify_timeout: 3.0      # 抓取验证超时（秒）
+  state_timeout: 10.0            # 默认状态超时（秒）
+  max_retries: 2                 # 最大重试次数
+  gripper:
+    default_close_position: 90   # 默认闭合位置 0-100
+    default_velocity: 50         # 默认速度 0-100
+    default_effort: 1.5          # 默认力矩 1.0-2.0A
+
+# 运动参数
+motion:
+  max_linear_speed: 0.5          # 最大线速度 (m/s)
+  max_angular_speed: 1.0         # 最大角速度 (rad/s)
+  default_speed: 0.15            # 默认移动速度
+
+# 调试选项
+debug:
+  enable_log: true
+  log_level: "INFO"
+  save_images: false
