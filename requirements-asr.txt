@@ -4,3 +4,15 @@ PyYAML>=6.0
 numpy>=1.22
 sounddevice>=0.4.6
 # whisper 依赖 ffmpeg，请在本机安装 ffmpeg 并加入 PATH
+
+# 视觉感知链路（目标检测、深度处理、坐标变换）
+opencv-python>=4.8.0
+ultralytics>=8.0.0  # YOLO目标检测
+onnxruntime>=1.16.0  # ONNX Runtime（昇腾/跨平台推理）
+# torch>=2.0.0  # CUDA加速（可选，用于GPU推理）
+# torch>=2.0.0; platform_system == "Linux" and platform_machine == "aarch64"  # 昇腾端
+
+# ROS依赖（仅在机器人上运行时需要）
+# rospy>=1.15.0
+# sensor_msgs>=1.12.0
+# cv_bridge>=1.13.0

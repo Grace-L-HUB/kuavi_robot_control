@@ -1,0 +1,58 @@
+# 相机内参配置文件
+# 根据实际rostopic echo /camera_1/color/camera_info 获取
+
+# 彩色相机内参 (320x240)
+color_camera:
+  topic: "/camera_1/color/image_raw"
+  camera_info_topic: "/camera_1/color/camera_info"
+  width: 320
+  height: 240
+  fx: 361.1151123046875
+  fy: 361.1151123046875
+  cx: 321.2451477050781
+  cy: 180.9050750732422
+  distortion_model: "plumb_bob"
+  D: [0.0, 0.0, 0.0, 0.0, 0.0]
+
+# 深度相机内参 (320x240)
+depth_camera:
+  topic: "/camera_1/depth/image_rect_raw"
+  camera_info_topic: "/camera_1/depth/camera_info"
+  width: 320
+  height: 240
+  fx: 192.194091796875
+  fy: 192.194091796875
+  cx: 154.92611694335938
+  cy: 119.32855224609375
+  distortion_model: "plumb_bob"
+  D: [0.0, 0.0, 0.0, 0.0, 0.0]
+
+# 手眼标定矩阵 (相机到机械臂基座)
+# 4x4 齐次变换矩阵 [R t; 0 1]
+# 需要通过手眼标定流程获得，这里使用单位矩阵作为占位符
+hand_eye_calibration:
+  enabled: false
+  T_cam_to_arm:
+    - [1.0, 0.0, 0.0, 0.0]
+    - [0.0, 1.0, 0.0, 0.0]
+    - [0.0, 0.0, 1.0, 0.0]
+    - [0.0, 0.0, 0.0, 1.0]
+
+# YOLO模型配置
+yolo:
+  # 模型路径（.pt格式用于PC端，.om格式用于昇腾端）
+  model_path: "ascend_models/yolov8n.pt"
+  # 目标类别（根据实际模型调整）
+  classes:
+    - cup
+    - bottle
+    - ball
+    - phone
+    - book
+    - box
+  # 置信度阈值
+  conf_threshold: 0.5
+  # NMS IoU阈值
+  iou_threshold: 0.45
+  # 检测设备
+  device: "cuda"  # "cuda" | "cpu" | "mlu" (昇腾)
