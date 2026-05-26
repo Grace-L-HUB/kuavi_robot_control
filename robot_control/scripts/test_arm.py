@@ -10,11 +10,12 @@ import os
 import time
 import logging
 
-# 添加src目录到路径
+# 添加 src 目录到路径
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from control.gripper_controller import GripperController
 from control.arm_controller import ArmController
+from utils.config_manager import ConfigManager
 
 def setup_logging():
     """设置日志"""
@@ -29,7 +30,12 @@ def test_gripper_operations():
     logger.info("Testing gripper operations...")
     
     try:
-        gripper = GripperController()
+        # 加载配置文件
+        config_path = os.path.join(os.path.dirname(__file__), '..', 'config', 'robot_config.yaml')
+        config_manager = ConfigManager(config_path)
+        config = config_manager.config
+        
+        gripper = GripperController(config=config)
         
         # 测试张开夹爪
         logger.info("Opening gripper...")
@@ -68,12 +74,17 @@ def test_arm_joint_control():
     logger.info("Testing arm joint control...")
     
     try:
-        arm = ArmController()
+        # 加载配置文件
+        config_path = os.path.join(os.path.dirname(__file__), '..', 'config', 'robot_config.yaml')
+        config_manager = ConfigManager(config_path)
+        config = config_manager.config
+        
+        arm = ArmController(config=config)
         
         # 测试设置关节角度
         logger.info("Setting joint angles...")
-        # 测试角度，实际使用时需要根据机械臂型号调整
-        joint_angles = [-30, 60, 0, -30, 0, -30, 30, 0, 0, 0, 0, 0, 0, 0]
+        # 使用更保守的安全角度（单位：度）
+        joint_angles = [0.0, 30.0, 0.0, -15.0, 0.0, -15.0, 15.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
         if arm.set_joint_angles(joint_angles):
             logger.info("Joint angles set successfully")
         else:
@@ -101,7 +112,12 @@ def test_arm_position_control():
     logger.info("Testing arm position control...")
     
     try:
-        arm = ArmController()
+        # 加载配置文件
+        config_path = os.path.join(os.path.dirname(__file__), '..', 'config', 'robot_config.yaml')
+        config_manager = ConfigManager(config_path)
+        config = config_manager.config
+        
+        arm = ArmController(config=config)
         
         # 测试移动到指定位置
         logger.info("Moving to position...")
@@ -134,7 +150,12 @@ def test_arm_control_mode():
     logger.info("Testing arm control mode...")
     
     try:
-        arm = ArmController()
+        # 加载配置文件
+        config_path = os.path.join(os.path.dirname(__file__), '..', 'config', 'robot_config.yaml')
+        config_manager = ConfigManager(config_path)
+        config = config_manager.config
+        
+        arm = ArmController(config=config)
         
         # 测试设置控制模式
         logger.info("Setting control mode to 0 (hold position)...")
