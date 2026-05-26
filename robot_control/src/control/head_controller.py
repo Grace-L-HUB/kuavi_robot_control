@@ -13,13 +13,8 @@ try:
 except ImportError:
     ROS_AVAILABLE = False
 
-# 尝试导入 Kuavo 自定义消息类型
-try:
-    from kuavo_sdk.msg import robotHeadMotionData
-    KUAVO_HEAD_MSG = True
-except ImportError:
-    robotHeadMotionData = None
-    KUAVO_HEAD_MSG = False
+# Kuavo 头部消息（优先 kuavo_msgs）
+from utils.kuavo_ros_types import robotHeadMotionData, KUAVO_HEAD_MSG
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +59,7 @@ class HeadController:
                 self._publisher = rospy.Publisher(
                     self.TOPIC, robotHeadMotionData, queue_size=10
                 )
-                logger.info("Head controller initialized with kuavo_sdk message type")
+                logger.info("Head controller initialized with kuavo_msgs message type")
             else:
                 # 回退方案：使用 Float64MultiArray
                 from std_msgs.msg import Float64MultiArray
@@ -72,7 +67,7 @@ class HeadController:
                     self.TOPIC, Float64MultiArray, queue_size=10
                 )
                 logger.warning("Head controller using Float64MultiArray fallback "
-                               "(kuavo_sdk.msg.robotHeadMotionData not available)")
+                               "(kuavo_msgs.robotHeadMotionData not available)")
 
         except Exception as e:
             logger.error(f"Failed to initialize head controller: {e}")

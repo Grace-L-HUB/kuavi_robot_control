@@ -80,7 +80,12 @@ def test_arm_joint_control():
         config = config_manager.config
         
         arm = ArmController(config=config)
-        
+
+        logger.info("Setting arm control mode to 2 (external_control)...")
+        if not arm.set_control_mode(2):
+            logger.warning("Failed to set external control mode; arm may not move")
+        time.sleep(1.0)
+
         # 测试设置关节角度
         logger.info("Setting joint angles...")
         # 使用更保守的安全角度（单位：度）
@@ -118,7 +123,11 @@ def test_arm_position_control():
         config = config_manager.config
         
         arm = ArmController(config=config)
-        
+
+        if not arm.set_control_mode(2):
+            logger.warning("Failed to set external control mode")
+        time.sleep(1.0)
+
         # 测试移动到指定位置
         logger.info("Moving to position...")
         # 测试位置，实际使用时需要根据机械臂工作空间调整
@@ -179,6 +188,9 @@ def main():
     try:
         config_path = os.path.join(os.path.dirname(__file__), '..', 'config', 'robot_config.yaml')
         ConfigManager(config_path).apply_ros_environment()
+        logger.info(
+            "Tip: source scripts/setup_ros_env.sh after build_ros_msgs.sh if import kuavo_msgs fails"
+        )
 
         logger.info("Starting arm tests...")
         

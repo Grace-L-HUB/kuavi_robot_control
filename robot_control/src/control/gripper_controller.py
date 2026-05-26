@@ -24,19 +24,14 @@ try:
 except ImportError:
     ROS_AVAILABLE = False
 
-# 尝试导入 Kuavo 服务类型
-try:
-    from kuavo_sdk.srv import controlLejuClaw, controlLejuClawRequest
-    KUAVO_CLAW_SRV = True
-except ImportError:
-    KUAVO_CLAW_SRV = False
-
-# 尝试导入 Kuavo 夹爪状态消息
-try:
-    from kuavo_sdk.msg import lejuClawState
-    KUAVO_CLAW_STATE_MSG = True
-except ImportError:
-    KUAVO_CLAW_STATE_MSG = False
+# Kuavo 夹爪消息/服务（优先 kuavo_msgs）
+from utils.kuavo_ros_types import (
+    controlLejuClaw,
+    controlLejuClawRequest,
+    lejuClawState,
+    KUAVO_CLAW_SRV,
+    KUAVO_CLAW_STATE_MSG,
+)
 
 logger = logging.getLogger(__name__)
 

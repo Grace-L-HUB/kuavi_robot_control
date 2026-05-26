@@ -19,32 +19,20 @@ try:
 except ImportError:
     ROS_AVAILABLE = False
 
-# 尝试导入 Kuavo 自定义消息/服务类型
-try:
-    from kuavo_sdk.msg import armTargetPoses
-    KUAVO_ARM_TARGET_MSG = True
-except ImportError:
-    armTargetPoses = None
-    KUAVO_ARM_TARGET_MSG = False
-
-try:
-    from kuavo_sdk.srv import changeArmCtrlMode, changeArmCtrlModeRequest
-    KUAVO_ARM_MODE_SRV = True
-except ImportError:
-    KUAVO_ARM_MODE_SRV = False
-
-try:
-    from motion_capture_ik.srv import twoArmHandPoseCmdSrv
-    from motion_capture_ik.msg import twoArmHandPoseCmd, ikSolveParam
-    KUAVO_IK_SRV = True
-except ImportError:
-    KUAVO_IK_SRV = False
-
-try:
-    from motion_capture_ik.srv import fkSrv
-    KUAVO_FK_SRV = True
-except ImportError:
-    KUAVO_FK_SRV = False
+# Kuavo 消息/服务类型（优先 kuavo_msgs，见 utils/kuavo_ros_types.py）
+from utils.kuavo_ros_types import (
+    armTargetPoses,
+    changeArmCtrlMode,
+    changeArmCtrlModeRequest,
+    twoArmHandPoseCmd,
+    twoArmHandPoseCmdSrv,
+    ikSolveParam,
+    fkSrv,
+    KUAVO_ARM_TARGET_MSG,
+    KUAVO_ARM_MODE_SRV,
+    KUAVO_IK_SRV,
+    KUAVO_FK_SRV,
+)
 
 try:
     import numpy as np

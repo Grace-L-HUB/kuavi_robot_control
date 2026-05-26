@@ -1,0 +1,6 @@
+# Catkin workspace build products
+ros_ws/build/
+ros_ws/devel/
+ros_ws/logs/
+ros_ws/.catkin_tools/
+ros_ws/install/
