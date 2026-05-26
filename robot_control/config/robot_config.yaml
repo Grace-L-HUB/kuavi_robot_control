@@ -4,14 +4,14 @@ robot:
 
   # WebSocket 配置
   websocket:
-    ip: "192.168.1.100"
+    ip: "169.254.128.2"
     port: 8080
     timeout: 8
     reconnect_interval: 5
 
   # ROS 配置
   ros:
-    master_uri: "http://192.168.1.100:11311"
+    master_uri: "http://169.254.128.2:11311"
     arm_topic: "/kuavo_arm_traj"
     gripper_service: "/control_robot_leju_claw"
     control_mode_service: "/arm_traj_change_mode"

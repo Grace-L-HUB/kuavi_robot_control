@@ -4,7 +4,7 @@
 整合底盘、手臂、夹爪、头部等所有子系统，
 通过 ActionExecutor 状态机驱动抓取递送动作。
 """
-from ..communication.robot_api import WooshApi
+from communication.robot_api import WooshApi
 from .gripper_controller import GripperController
 from .arm_controller import ArmController
 from .head_controller import HeadController
