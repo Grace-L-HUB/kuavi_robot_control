@@ -51,6 +51,22 @@ class ConfigManager:
         except Exception as e:
             logger.error(f"Error setting config value: {e}")
     
+    def apply_ros_environment(self) -> bool:
+        """根据配置设置 ROS_MASTER_URI（须在 import rospy / init_node 之前调用）"""
+        ros_config = self.get("robot.ros", {}) or {}
+        master_uri = ros_config.get("master_uri")
+        if not master_uri:
+            logger.warning("robot.ros.master_uri not set in config")
+            return False
+        os.environ["ROS_MASTER_URI"] = master_uri
+        logger.info(f"ROS_MASTER_URI={master_uri}")
+        return True
+
+    @property
+    def data(self) -> dict:
+        """返回完整配置字典（供控制器初始化使用）"""
+        return self.config
+
     def save(self):
         """保存配置到文件"""
         try:
@@ -82,13 +98,13 @@ class ConfigManager:
             "robot": {
                 "name": "wheeled_robot",
                 "websocket": {
-                    "ip": "192.168.1.100",
+                    "ip": "169.254.128.2",
                     "port": 8080,
                     "timeout": 8,
                     "reconnect_interval": 5
                 },
                 "ros": {
-                    "master_uri": "http://192.168.1.100:11311",
+                    "master_uri": "http://169.254.128.2:11311",
                     "arm_topic": "/kuavo_arm_traj",
                     "gripper_service": "/control_robot_leju_claw",
                     "control_mode_service": "/arm_traj_change_mode"

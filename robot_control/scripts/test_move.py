@@ -167,9 +167,10 @@ def main():
         # 加载配置
         config_path = os.path.join(os.path.dirname(__file__), '..', 'config', 'robot_config.yaml')
         config = ConfigManager(config_path)
-        
+        config.apply_ros_environment()
+
         # 初始化WebSocket客户端
-        websocket_config = config.get("robot.websocket", {})
+        websocket_config = config.get("robot.websocket", {}) or {}
         ip = websocket_config.get("ip", "192.168.1.100")
         port = websocket_config.get("port", 8080)
         url = f"ws://{ip}:{port}/"

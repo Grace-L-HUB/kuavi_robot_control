@@ -101,12 +101,10 @@ class WooshWebSocketClient:
                 return None
             
             sn = self._generate_sn()
-            message = {
-                "type": message_type,
-                "sn": sn
-            }
+            message = {"type": message_type, "sn": sn}
+            # 有业务参数时放入 body（interface.md）；无参数时不带 body（readme 示例）
             if body:
-                message.update(body)
+                message["body"] = body
             
             event = threading.Event()
             response_data = {}
@@ -170,8 +168,8 @@ class WooshWebSocketClient:
         try:
             data = json.loads(message)
             if "sn" in data:
-                # 处理请求响应
-                sn = data.get("sn")
+                # 处理请求响应（服务端可能返回 str/int，统一为 int 匹配）
+                sn = self._normalize_sn(data.get("sn"))
                 with self.lock:
                     if sn in self.requests:
                         event, response_data = self.requests[sn]
@@ -204,3 +202,11 @@ class WooshWebSocketClient:
         with self.lock:
             self.sn_counter += 1
             return self.sn_counter
+
+    @staticmethod
+    def _normalize_sn(sn) -> int:
+        """将响应中的 sn 规范为 int，便于与待发请求匹配"""
+        try:
+            return int(sn)
+        except (TypeError, ValueError):
+            return sn

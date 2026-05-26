@@ -37,6 +37,7 @@ def test_pickup_place():
         # 加载配置
         config_path = os.path.join(os.path.dirname(__file__), '..', 'config', 'robot_config.yaml')
         config = ConfigManager(config_path)
+        config.apply_ros_environment()
 
         # 初始化机器人控制器
         robot = RobotController(config.config)

@@ -177,6 +177,9 @@ def main():
     logger = logging.getLogger('test_arm')
     
     try:
+        config_path = os.path.join(os.path.dirname(__file__), '..', 'config', 'robot_config.yaml')
+        ConfigManager(config_path).apply_ros_environment()
+
         logger.info("Starting arm tests...")
         
         # 测试夹爪操作

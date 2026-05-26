@@ -64,12 +64,13 @@ class WooshApi(WooshWebSocketClient):
             bool: 成功返回 True
         """
         try:
+            # interface.md: PlanNavPath 需要 start/end/tolerance，不是 pose
+            pose_data = self.robot_pose_speed() or {}
+            start = pose_data.get("pose", {"x": 0, "y": 0, "theta": 0})
             body = {
-                "pose": {
-                    "x": x,
-                    "y": y,
-                    "theta": theta
-                }
+                "start": start,
+                "end": {"x": x, "y": y, "theta": theta},
+                "tolerance": 0.1,
             }
             result = self.request("woosh.robot.PlanNavPath", body)
             if result is None or not result.get("ok", False):

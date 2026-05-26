@@ -10,7 +10,9 @@ from .arm_controller import ArmController
 from .head_controller import HeadController
 from .pose_library import PoseLibrary
 from .action_model import ActionExecutor
+from utils.config_manager import ConfigManager
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +41,16 @@ class RobotController:
             bool: 底盘连接成功返回 True（其它子系统为可选）
         """
         try:
+            # ROS：从配置注入 Master（开发板未 export 时会连到 localhost）
+            if isinstance(self.config, ConfigManager):
+                self.config.apply_ros_environment()
+            else:
+                master_uri = (
+                    self.config.get("robot", {}).get("ros", {}).get("master_uri")
+                )
+                if master_uri:
+                    os.environ["ROS_MASTER_URI"] = master_uri
+
             # 初始化底盘控制（必需）
             websocket_config = self.config.get("robot", {}).get("websocket", {})
             ip = websocket_config.get("ip", "192.168.1.100")
