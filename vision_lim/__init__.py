@@ -32,6 +32,10 @@ from .coordinate_transform import (
     pixel_to_camera_coord,
     camera_to_arm_base,
 )
+from .camera_info_parser import (
+    parse_camera_info_file,
+    load_intrinsics_from_camera_info_files,
+)
 from .vision_pipeline import (
     VisionPipeline,
     VoiceCommand,
@@ -68,6 +72,8 @@ __all__ = [
     "load_intrinsics_from_yaml",
     "pixel_to_camera_coord",
     "camera_to_arm_base",
+    "parse_camera_info_file",
+    "load_intrinsics_from_camera_info_files",
     # 新的流水线模块
     "VisionPipeline",
     "VoiceCommand",

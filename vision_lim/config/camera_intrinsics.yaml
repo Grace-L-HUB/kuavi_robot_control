@@ -1,29 +1,29 @@
 # 相机内参配置文件
-# 根据实际rostopic echo /camera_1/color/camera_info 获取
+# 来自根目录 camera_info.txt / camera_info1.txt（rostopic echo 导出）
 
-# 彩色相机内参 (320x240)
+# 彩色相机 (640x480, camera_color_optical_frame)
 color_camera:
-  topic: "/camera_1/color/image_raw"
-  camera_info_topic: "/camera_1/color/camera_info"
-  width: 320
-  height: 240
-  fx: 361.1151123046875
-  fy: 361.1151123046875
-  cx: 321.2451477050781
-  cy: 180.9050750732422
+  topic: "/camera/color/image_raw"
+  camera_info_topic: "/camera/color/camera_info"
+  width: 640
+  height: 480
+  fx: 605.215087890625
+  fy: 604.91943359375
+  cx: 321.31610107421875
+  cy: 248.95516967773438
   distortion_model: "plumb_bob"
   D: [0.0, 0.0, 0.0, 0.0, 0.0]
 
-# 深度相机内参 (320x240)
+# 深度相机 (640x480, camera_depth_optical_frame)
 depth_camera:
-  topic: "/camera_1/depth/image_rect_raw"
-  camera_info_topic: "/camera_1/depth/camera_info"
-  width: 320
-  height: 240
-  fx: 192.194091796875
-  fy: 192.194091796875
-  cx: 154.92611694335938
-  cy: 119.32855224609375
+  topic: "/camera/depth/image_rect_raw"
+  camera_info_topic: "/camera/depth/camera_info"
+  width: 640
+  height: 480
+  fx: 390.8797607421875
+  fy: 390.8797607421875
+  cx: 324.0746765136719
+  cy: 236.543701171875
   distortion_model: "plumb_bob"
   D: [0.0, 0.0, 0.0, 0.0, 0.0]
 

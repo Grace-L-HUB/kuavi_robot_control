@@ -1,1360 +1,1061 @@
-# ROBOT-API v1.1.1
-Base URLs:
-
-# 机器人信息
-## POST 获取机器人信息
-- **接口地址**：`POST /woosh/robot/RobotInfo`
-- **请求体**
-```json
-{
-  "robotId": 30001
-}
-```
-
-### 请求参数
-|名称|位置|类型|必选|中文名|说明|
-|---|---|---|---|---|---|
-|body|body|object|否|请求消息体|none|
-|» robotId|body|integer|否|机器人ID|仅向调度系统请求时需赋值|
-
-### 返回示例（成功）
-```json
-{
-  "body": {
-    "abnormalCodes": {
-      "scs": []
-    },
-    "battery": {
-      "batteryCycle": 0,
-      "chargeCycle": 0,
-      "chargeState": 1,
-      "health": 0,
-      "power": 93,
-      "robotId": 30001,
-      "tempMax": 0
-    },
-    "deviceState": {
-      "state": 3
-    },
-    "genral": {
-      "displayModel": "Robase200",
-      "modelData": {
-        "height": 1550,
-        "length": 1250,
-        "load": 150,
-        "weight": 50,
-        "width": 670
-      },
-      "serialNumber": 30001,
-      "serviceId": "RB2000030100000000Z",
-      "type": 1,
-      "urdfName": "wooshmodel_robase200_cp_y",
-      "version": {
-        "rc": "1.0.0-1",
-        "system": "UROS20210720"
-      }
-    },
-    "hardwareState": {
-      "beacon": 0,
-      "board": 0,
-      "camera": [0, 0],
-      "crash": 0,
-      "esb": 0,
-      "imu": 0,
-      "lidar": [0, 0],
-      "lift": [0, 0],
-      "light": 0,
-      "magnetism": 0,
-      "motor": [0, 0],
-      "plc": 0,
-      "power": 0,
-      "roller": [0, 0],
-      "seanner": 0,
-      "sonar": [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-      "tractor": 0
-    },
-    "mode": {
-      "ctrl": 1,
-      "work": 3
-    },
-    "model": {
-      "model": [
-        {"x": 0.35, "y": 0.265, "z": 0},
-        {"x": 0.4, "y": 0.215, "z": 0},
-        {"x": 0.4, "y": -0.215, "z": 0},
-        {"x": 0.35, "y": -0.265, "z": 0},
-        {"x": -0.35, "y": -0.265, "z": 0},
-        {"x": -0.4, "y": -0.215, "z": 0},
-        {"x": -0.4, "y": 0.215, "z": 0},
-        {"x": -0.35, "y": 0.265, "z": 0}
-      ],
-      "robotId": 30001
-    },
-    "network": {
-      "isConnected": false,
-      "robotIp": "172.20.254.63",
-      "schIp": ""
-    },
-    "operationState": {
-      "nav": 2,
-      "robotId": 30001
-    },
-    "poseSpeed": {
-      "mapId": 0,
-      "mileage": 0,
-      "pose": {
-        "theta": -0.255771846,
-        "x": 4.23276472,
-        "y": -6.6727581
-      },
-      "robotId": 30001
-    },
-    "robotId": 30001,
-    "scene": {
-      "mapId": 0,
-      "mapName": "wooshmap",
-      "robotId": 30001,
-      "sceneName": "wooshmap",
-      "version": "147"
-    },
-    "setting": {
-      "allow": {
-        "autoCharge": true,
-        "autoPark": true,
-        "goodsCheck": true,
-        "mechanismCheck": false
-      },
-      "identity": {
-        "name": "30001"
-      },
-      "power": {
-        "alarm": 5,
-        "full": 98,
-        "idle": 80,
-        "low": 20
-      },
-      "server": {
-        "ip": "172.20.8.85",
-        "port": 5420
-      }
-    },
-    "state": 4,
-    "statusCodes": {
-      "scs": [
-        {
-          "code": "130104000000",
-          "level": 0,
-          "msg": "收到新的导航任务，导航避障开始",
-          "robotId": 30001,
-          "state": 4,
-          "taskId": "68240893101",
-          "time": "1682409385879",
-          "type": 1
-        },
-        {
-          "code": "130104000031",
-          "level": 1,
-          "msg": "避障成功",
-          "robotId": 30001,
-          "state": 4,
-          "taskId": "68240893101",
-          "time": "1682409386081",
-          "type": 1
-        }
-      ]
-    },
-    "taskProc": {
-      "action": {
-        "state": 1,
-        "type": 1,
-        "waitId": 0
-      },
-      "dest": "U5",
-      "msg": "",
-      "robotId": 30001,
-      "robotTaskId": "68240893101",
-      "state": 3,
-      "time": 1682409349,
-      "type": 1
-    }
-  },
-  "msg": "",
-  "ok": true,
-  "type": "woosh.robot.RobotInfo"
-}
-```
-
-### 返回结果
-|状态码|状态码含义|说明|数据模型|
-|---|---|---|---|
-|200|OK|成功|Inline|
-
-### 返回数据结构（200）
-|名称|类型|必选|约束|中文名|说明|
-|---|---|---|---|---|---|
-|» body|object|true|none|应答消息体|详见字典“woosh.robot.RobotInfo”|
-|» msg|string|true|none|应答状态消息|none|
-|» ok|boolean|true|none|应答结果|TRUE: 成功, FALSE: 失败|
-|» type|string|true|none|应答消息类型|woosh.robot.RobotInfo|
+你说得对，我之前的复现确实遗漏了部分内容。下面是**完整复现**，包含所有页面内容，未作删减。
 
 ---
 
-## POST 获取常规信息
-- **接口地址**：`POST /woosh/robot/General`
-- **请求体**
-```json
-{
-  "robotId": 30001
-}
-```
+# 接口使用文档
 
-### 请求参数
-|名称|位置|类型|必选|中文名|说明|
-|---|---|---|---|---|---|
-|body|body|object|否|请求消息体|none|
-|» robotId|body|integer|否|机器人ID|仅向调度系统请求时需赋值|
+## SDK概述
 
-### 返回示例（成功）
-```json
-{
-  "body": {
-    "displayModel": "Robase200",
-    "modelData": {
-      "height": 1550,
-      "length": 1250,
-      "load": 150,
-      "weight": 50,
-      "width": 670
-    },
-    "serialNumber": 30001,
-    "serviceId": "RB2000030100000000Z",
-    "type": 1,
-    "urdfName": "wooshmodel_robase200_cp_y",
-    "version": {
-      "rc": "1.0.0-1",
-      "system": "UROS20210720"
-    }
-  },
-  "msg": "",
-  "ok": true,
-  "type": "woosh.robot.General"
-}
-```
+该SDK提供了一系列用于控制和获取机器人状态的接口，主要分为两类：话题（Topic）和服务（Service）。这些接口基于ROS（机器人操作系统）框架，提供Python示例进行开发和调用。以下是SDK的主要功能概述：
 
-### 返回结果
-|状态码|状态码含义|说明|数据模型|
-|---|---|---|---|
-|200|OK|成功|Inline|
+## 话题（Topic）
+
+话题用于发布和订阅机器人传感器数据和控制指令。通过话题，用户可以实时获取机器人传感器的原始数据，如IMU数据、点云数据、图像数据等，也可以发布控制指令来控制机器人的运动和姿态。
+
+- 传感器数据：通过话题获取机器人传感器的原始数据，包括IMU数据、点云数据、图像数据等。
+- 运动控制：通过话题发布控制指令，指定机器人的运动轨迹、速度和姿态。
+
+## 服务（Service）
+
+服务用于执行特定的控制命令或获取状态信息。服务调用是同步的，即用户发送请求后会等待服务返回响应。服务通常用于执行一次性操作，如播放音乐、录制音频、设置控制模式等。
+
+- 控制命令：通过服务接口发送控制命令，如播放音乐、录制音频、设置手臂控制模式等。
+- 状态获取：通过服务接口获取机器人的状态信息。
+
+## 使用指南
+
+1. 初始化ROS节点：在使用SDK之前，需要初始化一个ROS节点。可以使用rospy.init_node()方法来完成节点的初始化。
+2. 创建话题订阅者或发布者：根据需要创建话题的订阅者或发布者。订阅者用于接收话题数据，发布者用于发送控制指令。
+3. 创建服务代理：对于需要调用的服务，创建一个服务代理对象，并通过该对象发送请求和接收响应。
+4. 处理数据或响应：在接收到话题数据或服务响应后，进行相应的处理或操作。
 
 ---
 
-## POST 获取配置信息
-- **接口地址**：`POST /woosh/robot/Setting`
-- **请求体**
-```json
-{
-  "robotId": 30001
-}
-```
+## /play_music 播放音频
 
-### 返回示例（成功）
-```json
-{
-  "body": {
-    "allow": {
-      "autoCharge": true,
-      "autoPark": true,
-      "goodsCheck": true,
-      "mechanismCheck": false
-    },
-    "identity": {
-      "name": "30001"
-    },
-    "power": {
-      "alarm": 5,
-      "full": 98,
-      "idle": 80,
-      "low": 20
-    },
-    "server": {
-      "ip": "172.20.8.85",
-      "port": 5420
-    }
-  },
-  "msg": "",
-  "ok": true,
-  "type": "woosh.robot.Setting"
-}
+### 1. 功能描述
+
+/play_music 服务用于控制机器人播放指定的音乐文件。用户可以通过提供音乐文件的名称或编号以及音量来实现音乐播放。
+
+### 2. 请求格式
+
+类型：playmusicRequest
+
+字段：
+- music_number (str): 音乐文件的名称或编号。可以是文件路径或预定义的音乐编号。
+- volume (int): 音乐的音量，范围通常为 0 到 100。
+
+### 3. 响应格式
+
+类型：playmusicResponse
+
+字段：
+- success_flag (bool): 表示音乐播放请求是否成功。True 表示成功，False 表示失败。
+
+### 4. 使用示例
+
+```python
+import rospy
+from kuavo_sdk.srv import playmusic, playmusicRequest
+
+# 初始化 ROS 节点
+rospy.init_node('music_player_client')
+
+# 创建服务代理
+robot_music_play_client = rospy.ServiceProxy("/play_music", playmusic)
+
+# 创建请求对象
+request = playmusicRequest()
+request.music_number = "/home/kuavo/你好" # 音乐文件路径
+request.volume = 80 # 音量
+
+# 发送请求并接收响应
+response = robot_music_play_client(request)
 ```
 
 ---
 
-## POST 获取机器人状态
-- **接口地址**：`POST /woosh/robot/RobotState`
-- **请求体**
-```json
-{
-  "robotId": 30001
-}
-```
+## /record_music 记录音频
 
-### 返回示例（成功）
-```json
-{
-  "body": {
-    "robotId": 30001,
-    "state": 4
-  },
-  "msg": "",
-  "ok": true,
-  "type": "woosh.robot.RobotState"
-}
-```
+### 1. 功能描述
 
----
+/record_music 服务用于控制机器人录制指定的音乐文件。用户可以通过提供音乐文件的编号以及超时时间来实现音乐录制。
 
-## POST 获取模式信息
-- **接口地址**：`POST /woosh/robot/Mode`
-- **请求体**
-```json
-{
-  "robotId": 30001
-}
-```
+### 2. 请求格式
 
-### 返回示例（成功）
-```json
-{
-  "body": {
-    "ctrl": 1,
-    "work": 3
-  },
-  "msg": "",
-  "ok": true,
-  "type": "woosh.robot.Mode"
-}
+类型：recordmusicRequest
+
+字段：
+- music_number (str): 音乐文件的编号。用于标识要录制的音乐文件。
+- time_out (int): 超时时间，以秒为单位。指定录制操作的最大持续时间。
+
+### 3. 响应格式
+
+类型：recordmusicResponse
+
+字段：
+- success_flag (bool): 表示音乐录制请求是否成功。True 表示成功，False 表示失败。
+
+### 4. 使用示例
+
+```python
+import rospy
+from kuavo_sdk.srv import recordmusic, recordmusicRequest
+
+# 初始化 ROS 节点
+rospy.init_node('music_recorder')
+
+# 创建服务代理
+robot_record_music_client = rospy.ServiceProxy("/record_music", recordmusic)
+
+# 创建请求对象
+request = recordmusicRequest()
+request.music_number = "example_music" # 音乐文件编号
+request.time_out = 30 # 超时时间
+
+# 调用服务并获取响应
+response = robot_record_music_client(request)
 ```
 
 ---
 
-## POST 获取位姿速度
-- **接口地址**：`POST /woosh/robot/PoseSpeed`
-- **请求体**
-```json
-{
-  "robotId": 30001
-}
-```
+## /livox/imu 雷达imu数据
 
-### 返回示例（成功）
-```json
-{
-  "body": {
-    "mapId": 0,
-    "mileage": 0,
-    "pose": {
-      "theta": 2.89655304,
-      "x": -8.88137531,
-      "y": 0.518660784
-    },
-    "robotId": 30001
-  },
-  "msg": "",
-  "ok": true,
-  "type": "woosh.robot.PoseSpeed"
-}
-```
+参考雷达启动启动雷达节点
 
----
+### 1. 功能描述
 
-## POST 获取电池信息
-- **接口地址**：`POST /woosh/robot/Battery`
-- **请求体**
-```json
-{
-  "robotId": 30001
-}
-```
+（原文未提供具体描述）
 
-### 返回示例（成功）
-```json
-{
-  "body": {
-    "batteryCycle": 0,
-    "chargeCycle": 0,
-    "chargeState": 1,
-    "health": 0,
-    "power": 91,
-    "robotId": 30001,
-    "tempMax": 0
-  },
-  "msg": "",
-  "ok": true,
-  "type": "woosh.robot.Battery"
-}
+### 2. 消息类型
+
+类型：sensor_msgs/Imu
+
+### 3. 消息字段
+
+- Header：消息头信息
+  - seq（uint32）：序列号
+  - stamp（time）：时间戳
+  - frame_id（string）：坐标系ID
+- orientation：方向四元数
+  - x, y, z, w（float64）：四元数的分量
+- orientation_covariance：方向协方差矩阵（float64[9]）
+- angular_velocity：角速度
+  - x, y, z（float64）：角速度的分量
+- angular_velocity_covariance：角速度协方差矩阵（float64[9]）
+- linear_acceleration：线性加速度
+  - x, y, z（float64）：加速度的分量
+- linear_acceleration_covariance：加速度协方差矩阵（float64[9]）
+
+### 4. 使用示例
+
+```python
+import rospy
+from sensor_msgs.msg import Imu
+
+def imu_callback(data):
+    rospy.loginfo("Received IMU data: %s", data)
+
+rospy.init_node('imu_listener')
+rospy.Subscriber("/livox/imu", Imu, imu_callback)
+rospy.spin()
 ```
 
 ---
 
-## POST 获取网络信息
-- **接口地址**：`POST /woosh/robot/Network`
-- **请求体**
-```json
-{
-  "robotId": 30001
-}
-```
+## /livox/lidar 雷达点云数据
 
-### 返回示例（成功）
-```json
-{
-  "body": {
-    "isConnected": false,
-    "robotIp": "172.20.254.63",
-    "schIp": ""
-  },
-  "msg": "",
-  "ok": true,
-  "type": "woosh.robot.Network"
-}
-```
+参考雷达启动启动雷达节点
 
----
+### 1. 功能描述
 
-## POST 获取场景信息
-- **接口地址**：`POST /woosh/robot/Scene`
-- **请求体**
-```json
-{
-  "robotId": 30001
-}
-```
+/livox/lidar 话题用于提供雷达的点云数据信息，用于三维空间的点云表示。
 
-### 返回示例（成功）
-```json
-{
-  "body": {
-    "mapId": 0,
-    "mapName": "wooshmap",
-    "sceneName": "wooshmap",
-    "version": "147"
-  },
-  "msg": "",
-  "ok": true,
-  "type": "woosh.robot.Scene"
-}
+### 2. 消息类型
+
+类型：sensor_msgs/PointCloud2
+
+### 3. 消息字段
+
+- Header：消息头信息
+  - seq（uint32）：序列号
+  - stamp（time）：时间戳
+  - frame_id（string）：坐标系ID
+- height（uint32）：点云的高度（通常为1）
+- width（uint32）：点云的宽度（点的数量）
+- fields：点字段信息
+  - name（string）：字段名称
+  - offset（uint32）：字段偏移
+  - datatype（uint8）：数据类型
+  - count（uint32）：字段计数
+- is_bigendian（bool）：是否为大端序
+- point_step（uint32）：每个点的字节数
+- row_step（uint32）：每行的字节数
+- data（uint8[]）：点云数据
+- is_dense（bool）：是否为密集点云
+
+### 4. 使用示例
+
+```python
+import rospy
+from sensor_msgs.msg import PointCloud2
+
+def lidar_callback(data):
+    rospy.loginfo("Received LIDAR data: %s", data)
+
+rospy.init_node('lidar_listener')
+rospy.Subscriber("/livox/lidar", PointCloud2, lidar_callback)
+rospy.spin()
 ```
 
 ---
 
-## POST 获取任务进度
-- **接口地址**：`POST /woosh/robot/TaskProc`
-- **请求体**
-```json
-{
-  "robotId": 30001
-}
-```
+## /camera/depth/color/points 相机点云数据
 
-### 返回示例（成功）
-```json
-{
-  "body": {
-    "action": {
-      "state": 1,
-      "type": 1,
-      "waitId": 0
-    },
-    "dest": "K10",
-    "msg": "",
-    "robotId": 30001,
-    "robotTaskId": "68241434201",
-    "state": 3,
-    "time": 1682416646,
-    "type": 1
-  },
-  "msg": "",
-  "ok": true,
-  "type": "woosh.robot.TaskProc"
-}
-```
+### 1. 功能描述
 
----
+/camera/depth/color/points 话题用于提供相机的点云数据，结合了深度信息和颜色信息，用于三维空间的点云表示。
 
-## POST 获取设备状态
-- **接口地址**：`POST /woosh/robot/DeviceState`
-- **请求体**
-```json
-{
-  "robotId": 30001
-}
-```
+### 2. 消息类型
 
-### 返回示例（成功）
-```json
-{
-  "body": {
-    "robotId": 30001,
-    "state": 3
-  },
-  "msg": "",
-  "ok": true,
-  "type": "woosh.robot.DeviceState"
-}
+类型：sensor_msgs/PointCloud2
+
+### 3. 消息字段
+
+- Header：消息头信息
+  - seq（uint32）：序列号
+  - stamp（time）：时间戳
+  - frame_id（string）：坐标系ID
+- height（uint32）：点云的高度（通常为1）
+- width（uint32）：点云的宽度（点的数量）
+- fields：点字段信息
+  - name（string）：字段名称
+  - offset（uint32）：字段偏移
+  - datatype（uint8）：数据类型
+  - count（uint32）：字段计数
+- is_bigendian（bool）：是否为大端序
+- point_step（uint32）：每个点的字节数
+- row_step（uint32）：每行的字节数
+- data（uint8[]）：点云数据
+- is_dense（bool）：是否为密集点云
+
+### 4. 使用示例
+
+```python
+import rospy
+from sensor_msgs.msg import PointCloud2
+
+def points_callback(data):
+    rospy.loginfo("Received point cloud data")
+
+rospy.init_node('points_listener')
+rospy.Subscriber("/camera/depth/color/points", PointCloud2, points_callback)
+rospy.spin()
 ```
 
 ---
 
-## POST 获取硬件状态
-- **接口地址**：`POST /woosh/robot/HardwareState`
-- **请求体**
-```json
-{
-  "robotId": 30001
-}
-```
+## /camera/color/image_raw 相机彩色图像数据
 
-### 返回示例（成功）
-```json
-{
-  "body": {
-    "beacon": 0,
-    "board": 0,
-    "camera": [0, 0],
-    "crash": 0,
-    "esb": 0,
-    "imu": 0,
-    "lidar": [0, 0],
-    "lift": [0, 0],
-    "light": 0,
-    "magnetism": 0,
-    "motor": [0, 0],
-    "plc": 0,
-    "power": 0,
-    "robotId": 30001,
-    "roller": [0, 0],
-    "seanner": 0,
-    "sonar": [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-    "tractor": 0
-  },
-  "msg": "",
-  "ok": true,
-  "type": "woosh.robot.HardwareState"
-}
-```
+### 1. 功能描述
 
----
+/camera/color/image_raw 话题用于提供相机的原始彩色图像数据。
 
-## POST 获取运行状态
-- **接口地址**：`POST /woosh/robot/OperationState`
-- **请求体**
-```json
-{
-  "robotId": 30001
-}
-```
+### 2. 消息类型
 
-### 返回示例（成功）
-```json
-{
-  "body": {
-    "nav": 2,
-    "robotId": 30001
-  },
-  "msg": "",
-  "ok": true,
-  "type": "woosh.robot.OperationState"
-}
+类型：sensor_msgs/Image
+
+### 3. 消息字段
+
+- Header：消息头信息
+  - seq（uint32）：序列号
+  - stamp（time）：时间戳
+  - frame_id（string）：坐标系ID
+- height（uint32）：图像高度
+- width（uint32）：图像宽度
+- encoding（string）：图像编码格式（如rgb8）
+- is_bigendian（uint8）：是否为大端序
+- step（uint32）：每行的字节数
+- data（uint8[]）：图像数据
+
+### 4. 使用示例
+
+```python
+import rospy
+from sensor_msgs.msg import Image
+
+def image_callback(data):
+    rospy.loginfo("Received raw image data")
+
+rospy.init_node('image_listener')
+rospy.Subscriber("/camera/color/image_raw", Image, image_callback)
+rospy.spin()
 ```
 
 ---
 
-## POST 获取机器人模型
-- **接口地址**：`POST /woosh/robot/Model`
-- **请求体**
-```json
-{
-  "robotId": 30001
-}
-```
+## /camera/depth/image_rect_raw 相机深度图像数据
 
-### 返回示例（成功）
-```json
-{
-  "body": {
-    "model": [
-      {"x": 0.35, "y": 0.265, "z": 0},
-      {"x": 0.4, "y": 0.215, "z": 0},
-      {"x": 0.4, "y": -0.215, "z": 0},
-      {"x": 0.35, "y": -0.265, "z": 0},
-      {"x": -0.35, "y": -0.265, "z": 0},
-      {"x": -0.4, "y": -0.215, "z": 0},
-      {"x": -0.4, "y": 0.215, "z": 0},
-      {"x": -0.35, "y": 0.265, "z": 0}
-    ],
-    "robotId": 30001
-  },
-  "msg": "",
-  "ok": true,
-  "type": "woosh.robot.Model"
-}
-```
+### 1. 功能描述
 
----
+/camera/depth/image_rect_raw 话题用于提供相机的深度图像数据，经过校正以消除畸变。
 
-## POST 获取历史任务
-- **接口地址**：`POST /woosh/robot/TaskHistory`
-- **说明**：任务状态信息(最近五十条)
-- **请求体**
-```json
-{}
-```
+### 2. 消息类型
 
-### 返回示例（成功）
-```json
-{
-  "body": {
-    "tes": [
-      {
-        "dest": "",
-        "msg": "",
-        "robotTaskId": "68242105502",
-        "state": 7,
-        "time": 1682421626,
-        "type": 0
-      }
-    ]
-  },
-  "msg": "Request succeed",
-  "ok": true,
-  "type": "woosh.robot.TaskHistory"
-}
+类型：sensor_msgs/Image
+
+### 3. 消息字段
+
+- Header：消息头信息
+  - seq（uint32）：序列号
+  - stamp（time）：时间戳
+  - frame_id（string）：坐标系ID
+- height（uint32）：图像高度
+- width（uint32）：图像宽度
+- encoding（string）：图像编码格式（如16UC1）
+- is_bigendian（uint8）：是否为大端序
+- step（uint32）：每行的字节数
+- data（uint8[]）：图像数据
+
+### 4. 使用示例
+
+```python
+import rospy
+from sensor_msgs.msg import Image
+
+def depth_image_callback(data):
+    rospy.loginfo("Received depth image data")
+
+rospy.init_node('depth_image_listener')
+rospy.Subscriber("/camera/depth/image_rect_raw", Image, depth_image_callback)
+rospy.spin()
 ```
 
 ---
 
-## POST 获取状态码信息
-- **接口地址**：`POST /woosh/robot/count/StatusCodes`
-- **请求体**
-```json
-{
-  "robotId": 30001
-}
-```
+## /arm_traj_change_mode 设置手臂控制模式
 
-### 返回示例（成功）
-```json
-{
-  "body": {
-    "scs": [
-      {
-        "code": "130104000061",
-        "level": 1,
-        "msg": "直行",
-        "state": 4,
-        "taskId": "68241437402",
-        "time": "1682420920688",
-        "type": 1
-      }
-    ]
-  },
-  "msg": "",
-  "ok": true,
-  "type": "woosh.robot.count.StatusCodes"
-}
-```
+### 1. 功能描述
 
----
+/arm_traj_change_mode 服务用于设置 OCS2 手臂的控制模式。用户可以通过提供控制模式编号来更改手臂的操作方式。
 
-## POST 获取异常码信息
-- **接口地址**：`POST /woosh/robot/count/AbnormalCodes`
-- **请求体**
-```json
-{
-  "robotId": 30001
-}
-```
+控制模式包括：
+- 保持姿势 (keep pose)
+- 行走时自动摆手 (auto_swing_arm)
+- 外部控制 (external_control)
 
-### 返回示例（成功）
-```json
-{
-  "body": {
-    "scs": []
-  },
-  "msg": "",
-  "ok": true,
-  "type": "woosh.robot.count.AbnormalCodes"
-}
+### 2. 请求格式
+
+类型：changeArmCtrlModeRequest
+
+字段：
+- control_mode (int): 要设置的控制模式编号。有效值为 0、1 或 2。
+
+### 3. 响应格式
+
+类型：changeArmCtrlModeResponse
+
+字段：
+- result (bool): 表示控制模式更改请求是否成功。True 表示成功，False 表示失败。
+- message (str): 包含关于操作结果的详细信息的消息。
+
+### 4. 使用示例
+
+```python
+import rospy
+from kuavo_sdk.srv import changeArmCtrlMode, changeArmCtrlModeRequest
+
+# 初始化 ROS 节点
+rospy.init_node('arm_control_mode_client')
+
+# 创建服务代理
+arm_traj_change_mode_client = rospy.ServiceProxy("/arm_traj_change_mode", changeArmCtrlMode)
+
+# 创建请求对象
+request = changeArmCtrlModeRequest()
+request.control_mode = 2 # 设置控制模式
+
+# 调用服务并获取响应
+response = arm_traj_change_mode_client(request)
 ```
 
 ---
 
-## POST 请求导航路径
-- **接口地址**：`POST /woosh/robot/NavPath`
-- **请求体**
-```json
-{}
-```
+## /kuavo_arm_target_poses 手臂运动控制（指定时间内到达目标位置）
 
-## POST 请求全局规划路径
-- **接口地址**：`POST /woosh/robot/PlanPath`
-- **请求体**
-```json
-{}
-```
+### 1. 功能描述
 
-# 机器人配置
-## POST 设置机器人标识
-- **接口地址**：`POST /woosh/robot/setting/Identity`
-- **请求体**
-```json
-{
-  "robotId": 30001,
-  "name": "A666"
-}
-```
+/kuavo_arm_target_poses 话题用于发布手臂的目标姿态信息，包括时间和关节角度。该话题可以用于控制手臂运动到指定的姿态。
 
-### 返回示例（成功）
-```json
-{
-  "body": {
-    "name": "A666",
-    "robotId": 30001
-  },
-  "msg": "Request succeed",
-  "ok": true,
-  "type": "woosh.robot.setting.Identity"
-}
-```
+### 2. 消息类型
 
----
+类型：kuavo_sdk/armTargetPoses
 
-## POST 设置连接服务器配置
-- **接口地址**：`POST /woosh/robot/setting/Server`
-- **请求体**
-```json
-{
-  "robotId": 30001,
-  "ip": "172.20.8.85",
-  "port": 5420
-}
+### 3. 消息字段
+
+- times (list of float): 时间列表，表示每个姿态的目标时间点。
+- values (list of float): 关节角度列表，表示手臂在每个时间点的目标关节角度。
+
+### 4. 使用示例
+
+```python
+import rospy
+from kuavo_sdk.msg import armTargetPoses
+
+# 初始化ROS节点
+rospy.init_node('arm_target_poses_publisher')
+
+# 创建发布者
+pub = rospy.Publisher('kuavo_arm_target_poses', armTargetPoses, queue_size=10)
+
+# 创建消息对象
+msg = armTargetPoses()
+msg.times = [3] # 时间列表
+msg.values = [-20, 0, 0, -30, 0, 0, 0, 20, 0, 0, -30, 0, 0, 0] # 关节角度列表
+
+# 发布消息
+pub.publish(msg)
 ```
 
 ---
 
-## POST 开关自主回充
-- **接口地址**：`POST /woosh/robot/setting/AutoCharge`
-- **请求体**
-```json
-{
-  "robotId": 30001,
-  "allow": true
-}
+## /kuavo_arm_traj 手臂运动控制（用于自定义手臂运动轨迹规划）
+
+### 1. 功能描述
+
+/kuavo_arm_traj 话题用于控制机器人手臂运动，通过发布手臂目标关节位置来实现手臂的精确控制。
+
+### 2. 消息类型
+
+类型：sensor_msgs/JointState
+
+### 3. 消息字段
+
+- name (list of string): 关节名称列表，假设有 14 个关节，名称为 "arm_joint_1" 到 "arm_joint_14"。
+- position (list of float): 当前关节位置列表。
+- header.stamp (time): 消息的时间戳，设置为当前时间。
+
+### 4. 使用示例
+
+```python
+import rospy
+from sensor_msgs.msg import JointState
+import numpy as np
+
+# 初始化ROS节点
+rospy.init_node('sim_traj')
+
+# 创建发布者
+pub = rospy.Publisher("/kuavo_arm_traj", JointState, queue_size=10)
+
+# 等待直到有订阅者连接
+while pub.get_num_connections() == 0:
+    rospy.sleep(0.1) # 适当的睡眠时间，避免 CPU 占用过高
+
+msg = JointState()
+msg.name = ["arm_joint_" + str(i) for i in range(1, 15)] # 关节名称列表
+msg.header.stamp = rospy.Time.now() # 当前时间戳
+msg.position = np.array([-30, 60, 0, -30, 0, -30, 30, 0, 0, 0, 0, 0, 0, 0]) # 关节位置列表
+
+# 发布消息
+pub.publish(msg)
 ```
 
 ---
 
-## POST 开关自主泊车
-- **接口地址**：`POST /woosh/robot/setting/AutoPark`
-- **请求体**
-```json
-{
-  "allow": true,
-  "robotId": 0
-}
+## /robot_head_motion_data 头部关节控制
+
+### 1. 功能描述
+
+/robot_head_motion_data 话题用于发布机器人头部的目标运动数据，包括偏航角和俯仰角。该话题可以用于控制机器人的头部运动。
+
+### 2. 消息类型
+
+类型：kuavo_sdk/robotHeadMotionData
+
+### 3. 消息字段
+
+- joint_data (list of float): 包含头部偏航角和俯仰角的列表。偏航角范围为 [-30, 30] 度，俯仰角范围为 [-25, 25] 度。
+
+### 4. 使用示例
+
+```python
+import rospy
+from kuavo_sdk.msg import robotHeadMotionData
+
+# 初始化ROS节点
+rospy.init_node('robot_head_controller')
+
+# 创建发布者
+pub_head_pose = rospy.Publisher('/robot_head_motion_data', robotHeadMotionData, queue_size=10)
+
+# 创建消息对象
+head_target_msg = robotHeadMotionData()
+head_target_msg.joint_data = [0, 0] # 偏航角和俯仰角
+
+# 发布消息
+pub_head_pose.publish(head_target_msg)
 ```
 
 ---
 
-## POST 开关货物检测
-- **接口地址**：`POST /woosh/robot/setting/GoodsCheck`
-- **请求体**
-```json
-{
-  "allow": true,
-  "robotId": 0
-}
+## /control_robot_hand_position 灵巧手控制
+
+### 1. 功能描述
+
+/control_robot_hand_position 话题用于控制机器人双手（手指）的运动，通过发布手指目标关节位置来实现手部的精确控制。
+
+### 2. 话题类型
+
+类型：kuavo_sdk/robotHandPosition
+
+### 3. 消息字段
+
+- left_hand_position (list of float): 左手位置，包含6个元素，每个元素的取值范围为 [0, 100]，0 为张开，100 为闭合。
+- right_hand_position (list of float): 右手位置，包含6个元素，每个元素的取值范围为 [0, 100]，0 为张开，100 为闭合。
+
+### 4. 使用示例
+
+```python
+import rospy
+from kuavo_sdk.msg import robotHandPosition
+
+# 初始化ROS节点
+rospy.init_node('robot_hand_controller')
+
+# 初始化话题发布者
+pub = rospy.Publisher('/control_robot_hand_position', robotHandPosition, queue_size=10)
+
+# 创建消息对象
+msg = robotHandPosition()
+msg.left_hand_position = [0, 0, 0, 0, 0, 0] # 左手位置
+msg.right_hand_position = [20, 20, 20, 20, 20, 20] # 右手位置
+
+# 发布消息
+pub.publish(msg)
 ```
 
 ---
 
-## POST 机器人电量配置
-- **接口地址**：`POST /woosh/robot/setting/Power`
-- **请求体**
-```json
-{
-  "robotId": 30001,
-  "alarm": 10,
-  "low": 20,
-  "idle": 80,
-  "full": 98
-}
-```
+## /cmd_pose 位置控制
 
-# 场景地图
-## POST 获取场景列表
-- **接口地址**：`POST /woosh/map/SceneList`
-- **请求体**
-```json
-{}
-```
+### 1. 功能描述
 
-### 返回示例（成功）
-```json
-{
-  "body": {
-    "scenes": [
-      {
-        "maps": ["wooshmap"],
-        "name": "wooshmap"
-      }
-    ]
-  },
-  "msg": "",
-  "ok": true,
-  "type": "woosh.map.SceneList"
-}
-```
+/cmd_pose 话题用于发布控制指令，指定机器人在空间中的线速度和角速度。
 
----
+### 2. 消息类型
 
-## POST 获取场景数据
-- **接口地址**：`POST /woosh/map/SceneData`
-- **请求体**
-```json
-{
-  "name": "wooshmap"
-}
+类型：geometry_msgs/Twist
+
+### 3. 消息字段
+
+- linear.x (float): 基于当前位置的 x 方向值，单位为米（m）。
+- linear.y (float): 基于当前位置的 y 方向值，单位为米（m）。
+- linear.z (float): 增量高度（m）。
+- angular.x (float): 未使用，设置为 0。
+- angular.y (float): 未使用，设置为 0。
+- angular.z (float): 基于当前位置旋转（偏航）的角度，单位为弧度（radian）。
+
+### 4. 使用示例
+
+```python
+import rospy
+from geometry_msgs.msg import Twist
+
+# 初始化ROS节点
+rospy.init_node('cmd_pose_publisher')
+
+# 创建发布者
+cmd_pose_pub = rospy.Publisher('/cmd_pose', Twist, queue_size=10)
+
+# 创建Twist消息对象
+cmd_pose_msg = Twist()
+cmd_pose_msg.linear.x = 0.5 # 基于当前位置的 x 方向值 (m)
+cmd_pose_msg.linear.y = 0.0 # 基于当前位置的 y 方向值 (m)
+cmd_pose_msg.linear.z = 0.0 # 增量高度
+cmd_pose_msg.angular.z = 0.0 # 基于当前位置旋转（偏航）的角度，单位为弧度（radian）
+
+# 发布消息
+cmd_pose_pub.publish(cmd_pose_msg)
 ```
 
 ---
 
-## POST 下载地图
-- **接口地址**：`POST /woosh/map/Download`
-- **请求体**
-```json
-{
-  "sceneName": "wooshmap"
-}
+## /cmd_vel 速度控制
+
+### 1. 功能描述
+
+/cmd_vel 话题用于发布控制指令，指定机器人在空间中的线速度和角速度。
+
+### 2. 消息类型
+
+类型：geometry_msgs/Twist
+
+### 3. 消息字段
+
+- linear.x (float): x 方向线速度 (m/s)。
+- linear.y (float): y 方向线速度 (m/s)。
+- linear.z (float): 增量高度 (m)。
+- angular.x (float): 未使用，设置为 0。
+- angular.y (float): 未使用，设置为 0。
+- angular.z (float): yaw 方向角速度 (radian/s)。
+
+### 4. 使用示例
+
+```python
+import rospy
+from geometry_msgs.msg import Twist
+
+# 初始化ROS节点
+rospy.init_node('cmd_vel_publisher')
+
+# 创建发布者
+cmd_vel_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
+
+# 设置发布频率
+rate = rospy.Rate(10) # 10 Hz
+
+# 创建Twist消息对象
+cmd_vel_msg = Twist()
+cmd_vel_msg.linear.x = 0.2 # x 方向速度
+cmd_vel_msg.linear.y = 0.0 # y 方向速度
+cmd_vel_msg.linear.z = 0.0 # 增量高度
+cmd_vel_msg.angular.z = 0.0 # yaw 方向角速度
+
+while not rospy.is_shutdown():
+    # 发布消息
+    cmd_vel_pub.publish(cmd_vel_msg)
+    # 等待下一个发布周期
+    rate.sleep()
 ```
 
 ---
 
-## POST 上传地图
-- **接口地址**：`POST /woosh/map/Upload`
-- **请求体**
-```json
-{}
+## /humanoid_controller/real_initial_start 执行机器人站立
+
+### 1. 功能描述
+
+/humanoid_controller/real_initial_start 服务用于触发机器人的初始化过程：机器人cali状态执行一次机器人缩腿，再执行一次机器人站立，用户需要在站立过程中用手扶住机器人以确保安全，实机才有该服务。
+
+### 2. 服务类型
+
+类型：std_srvs/Trigger
+
+### 3. 请求消息
+
+无需请求参数。
+
+### 4. 响应消息
+
+- success (bool): 服务调用结果，成功返回 True，失败返回 False。
+- message (string): 服务调用的响应消息，提供成功或失败的详细信息。
+
+### 5. 使用示例
+
+```python
+import rospy
+from std_srvs.srv import Trigger
+
+# 初始化ROS节点
+rospy.init_node('init_trigger_service_caller')
+
+# 创建服务代理
+trigger_init_service = rospy.ServiceProxy('/humanoid_controller/real_initial_start', Trigger)
+
+# 调用服务并获取响应
+response = trigger_init_service()
 ```
 
 ---
 
-## POST 修改地图或场景名
-- **接口地址**：`POST /woosh/map/Rename`
-- **请求体**
-```json
-{
-  "old_scene_name": "string",
-  "new_scene_name": "string",
-  "old_map_name": "string",
-  "new_map_name": "string"
-}
+## /sensors_data_raw 传感器数据
+
+### 1. 功能描述
+
+/sensors_data_raw 话题用于发布实物机器人或仿真器的传感器原始数据，包括关节数据、IMU数据和末端执行器数据。
+
+### 2. 消息类型
+
+类型：kuavo_sdk/sensorsData
+
+### 3. 消息字段
+
+| 字段 | 类型 | 描述 |
+|------|------|------|
+| sensor_time | time | 时间戳 |
+| joint_data | kuavo_sdk/jointData | 关节数据：位置、速度、加速度、电流 |
+| imu_data | kuavo_sdk/imuData | 包含陀螺仪、加速度计、自由加速度、四元数 |
+| end_effector_data | kuavo_sdk/endEffectorData | 末端数据，暂未使用 |
+
+### 4. 关节数据说明
+
+- 数组长度：NUM_JOINT
+- 数据顺序：
+  - 前12个数据为下肢电机数据：
+    - 0~5为左下肢数据（l_leg_roll, l_leg_yaw, l_leg_pitch, l_knee, l_foot_pitch, l_foot_roll）
+    - 6~11为右下肢数据（r_leg_roll, r_leg_yaw, r_leg_pitch, r_knee, r_foot_pitch, r_foot_roll）
+  - 接着14个数据为手臂电机数据：
+    - 12~18左臂电机数据（"l_arm_pitch", "l_arm_roll", "l_arm_yaw", "l_forearm_pitch", "l_hand_yaw", "l_hand_pitch", "l_hand_roll"）
+    - 19~25为右臂电机数据（"r_arm_pitch", "r_arm_roll", "r_arm_yaw", "r_forearm_pitch", "r_hand_yaw", "r_hand_pitch", "r_hand_roll"）
+  - 最后2个为头部电机数据：head_yaw 和 head_pitch
+- 单位：
+  - 位置：弧度 (radian)
+  - 速度：弧度每秒 (radian/s)
+  - 加速度：弧度每平方秒 (radian/s²)
+  - 电流：安培 (A)
+
+### 5. IMU数据说明
+
+- gyro: 陀螺仪的角速度，单位弧度每秒 (rad/s)
+- acc: 加速度计的加速度，单位米每平方秒 (m/s²)
+- quat: IMU的姿态 (orientation)
+
+### 6. 使用示例
+
+```python
+import rospy
+from kuavo_sdk.msg import sensorsData
+
+def callback(data):
+    rospy.loginfo(f"Received sensor data at time: {data.sensor_time}")
+
+# 初始化ROS节点
+rospy.init_node('sensor_data_listener')
+
+# 订阅传感器数据话题
+rospy.Subscriber('/sensors_data_raw', sensorsData, callback)
+
+# 保持节点运行
+rospy.spin()
 ```
 
 ---
 
-## POST 删除场景或地图
-- **接口地址**：`POST /woosh/map/Delete`
-- **请求体**
-```json
-{
-  "scene_name": "string",
-  "map_name": "string"
-}
+## /joint_cmd 关节控制
+
+### 1. 功能描述
+
+/joint_cmd 话题用于控制机器人的关节，通过发布关节的目标位置、速度、扭矩等参数，实现对机器人的精确控制。该接口支持多种控制模式，包括扭矩控制、速度控制和位置控制。
+
+### 2. 消息类型
+
+类型：kuavo_sdk/jointCmd
+
+### 3. 消息字段
+
+| 字段 | 类型 | 描述 |
+|------|------|------|
+| joint_q | float64[] | 关节位置，单位(degree) |
+| joint_v | float64[] | 关节速度，单位(degree/s) |
+| tau | float64[] | 关节扭矩，单位(N·m) |
+| tau_max | float64[] | 最大关节扭矩，单位(N·m) |
+| tau_ratio | float64[] | 扭矩系数 |
+| joint_kp | float64[] | kp 参数 |
+| joint_kd | float64[] | kd 参数 |
+| control_modes | int32[] | 关节对应的控制模式 |
+| header | std_msgs/Header | 时间戳等信息 |
+
+数组长度为配置文件中的NUM_JOINT，即关节总数。
+
+关节控制模式中：
+- 0: Torque控制模式
+- 1: Velocity控制模式
+- 2: Position控制模式
+
+### 4. 使用示例
+
+```python
+import rospy
+from kuavo_sdk.msg import jointCmd
+from std_msgs.msg import Header
+
+# 初始化ROS节点
+rospy.init_node('joint_cmd_publisher')
+
+# 创建发布者
+pub = rospy.Publisher('/joint_cmd', jointCmd, queue_size=10)
+
+# 创建jointCmd消息对象
+cmd_msg = jointCmd()
+
+# 设置消息头
+cmd_msg.header = Header()
+cmd_msg.header.stamp = rospy.Time.now()
+
+# 设置关节控制参数
+NUM_JOINT = 40  # 示例数量，实际使用时从配置获取
+cmd_msg.joint_q = [0.0] * NUM_JOINT  # 关节位置
+cmd_msg.joint_v = [0.0] * NUM_JOINT  # 关节速度
+cmd_msg.tau = [0.0] * NUM_JOINT  # 关节扭矩
+cmd_msg.tau_max = [10.0] * NUM_JOINT  # 最大关节扭矩
+cmd_msg.tau_ratio = [1.0] * NUM_JOINT  # 扭矩系数
+cmd_msg.joint_kp = [1.0] * NUM_JOINT  # kp参数
+cmd_msg.joint_kd = [0.1] * NUM_JOINT  # kd参数
+cmd_msg.control_modes = [2] * NUM_JOINT  # 位置控制模式
+
+# 发布消息
+pub.publish(cmd_msg)
 ```
 
 ---
 
-## POST 场景文件MD5请求
-- **接口地址**：`POST /woosh/map/SceneMd5`
-- **请求体**
-```json
-{
-  "sceneName": "wooshmap"
-}
+## /ik/fk_srv 机器人手臂FK正解
+
+### 1. 服务描述
+
+/ik/fk_srv 服务用于机器人手臂FK正解。
+
+### 2. 请求格式
+
+类型：motion_capture_ik/fkSrv
+
+字段：
+| 字段 | 类型 | 描述 |
+|------|------|------|
+| q | float64[] | 长度为14，内容为手臂关节的角度，单位弧度 |
+
+### 3. 响应格式
+
+类型：motion_capture_ik/fkSrv
+
+字段：
+| 字段 | 类型 | 描述 |
+|------|------|------|
+| success | bool | 返回参数，是否成功 |
+| hand_poses | twoArmHandPose | 返回参数，正解结果，具体内容见上述同类型消息 |
+
+### 4. 使用示例
+
+```python
+import rospy
+from motion_capture_ik.srv import fkSrv
+
+# 初始化ROS节点
+rospy.init_node('example_fk_srv_node')
+
+# 创建服务代理
+fk_srv = rospy.ServiceProxy('/ik/fk_srv', fkSrv)
+
+# 创建请求对象（单位：弧度）
+joint_angles = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.38, -1.39, -0.29, -0.43, 0.0, -0.17, 0.0]
+
+# 发送请求并接收响应
+response = fk_srv(joint_angles)
 ```
 
 ---
 
-## POST 场景同步
-- **接口地址**：`POST /woosh/map/SceneSync`
-- **请求体**
-```json
-{}
+## /ik/two_arm_hand_pose_cmd_srv 机器人手臂IK逆解
+
+### 1. 服务描述
+
+/ik/two_arm_hand_pose_cmd_srv 服务用于机器人手臂IK逆解。
+
+### 2. 请求格式
+
+类型：twoArmHandPoseCmdRequest
+
+字段：
+| 字段 | 类型 | 描述 |
+|------|------|------|
+| hand_poses | twoArmHandPose | 双手信息：末端位置，末端四元数，手肘位置等 |
+| use_custom_ik_param | bool | 是否使用自定义的 IK 参数，设置为 true 时会使用消息中的 ik_param 值用于求解 |
+| joint_angles_as_q0 | bool | 是否使用 hand_poses 中的 joint_angles 作为求解时的 q0 |
+| ik_param | ikSolveParam | 自定义的 IK 求解参数 |
+
+对于ik_param字段详细描述如下：
+
+| 字段 | 类型 | 描述 |
+|------|------|------|
+| major_optimality_tol | float64 | snopt 参数，即主要迭代中优化性的容差，该参数决定最优性条件的满足程度 |
+| major_feasibility_tol | float64 | snopt 参数，即主要迭代中的可行性容差，用于控制非线性约束 |
+| minor_feasibility_tol | float64 | snopt 参数，次要迭代中的可行性容差，主要用于线性化后的模型 |
+| major_iterations_limit | float64 | snopt 参数，主要迭代的最大次数 |
+| oration_constraint_tol | float64 | 姿态约束参数 |
+| pos_constraint_tol | float64 | 位置约束参数，该参数只会在 pos_cost_weight 大于 0.0 时生效 |
+| pos_cost_weight | float64 | 位置成本参数，当设置成 0.0 时求解精度要求最高 |
+
+对于hand_poses字段详细描述如下：
+
+| 字段 | 类型 | 描述 |
+|------|------|------|
+| pos_xyz | float64[3] | 末端期望的位置，单位m |
+| quat_xyzw | float64[4] | 末端期望的姿态 |
+| elbow_pos_xyz | float64[3] | 手肘期望的位置，全设置为0.0时忽略该参数 |
+| joint_angles | float64[7] | 如果 joint_angles_as_q0 为 true，则使用该值作为求解时的 q0，单位弧度 |
+
+### 3. 响应格式
+
+| 字段 | 类型 | 描述 |
+|------|------|------|
+| success | bool | 是否成功 |
+| with_torso | bool | 是否包含躯干 |
+| q_arm | float64[] | 手臂关节值，单位弧度 |
+| q_torso | float64[] | 躯干的关节值 |
+| time_cost | float64 | 求解耗时，单位ms |
+| hand_poses | twoArmHandPose | IK 求解结果，具体内容见上述同类型消息 |
+
+### 4. 使用示例
+
+```python
+import rospy
+import numpy as np
+from motion_capture_ik.msg import twoArmHandPoseCmd, ikSolveParam
+from motion_capture_ik.srv import twoArmHandPoseCmdSrv
+
+# 初始化ROS节点
+rospy.init_node('example_ik_srv_node')
+
+# 创建服务代理
+ik_srv = rospy.ServiceProxy('two_arm_hand_pose_cmd_srv', twoArmHandPoseCmdSrv)
+
+# 使用默认参数
+use_custom_ik_param = False
+joint_angles_as_q0 = False
+
+# 创建请求对象
+request = twoArmHandPoseCmd()
+request.use_custom_ik_param = use_custom_ik_param
+request.joint_angles_as_q0 = joint_angles_as_q0
+
+# 设置左手末端执行器的位置和姿态
+request.hand_poses.left_pose.pos_xyz = np.array([0.45, 0.25, 0.11988012])
+request.hand_poses.left_pose.quat_xyzw = [0.0, -0.70682518, 0.0, 0.70738827] # 四元数
+request.hand_poses.left_pose.elbow_pos_xyz = np.zeros(3) # 设置成 0.0 时，不会被使用
+
+# 设置右手末端执行器的位置和姿态
+request.hand_poses.right_pose.pos_xyz = np.array([0.45, -0.25, 0.11988012])
+request.hand_poses.right_pose.quat_xyzw = [0.0, -0.70682518, 0.0, 0.70738827] # 四元数
+request.hand_poses.right_pose.elbow_pos_xyz = np.zeros(3) # 设置成 0.0 时，不会被使用
+
+# 发送请求并接收响应
+response = ik_srv(request)
 ```
 
 ---
 
-## POST 获取场景数据(Easy)
-- **接口地址**：`POST /woosh/map/SceneDataEasy`
-- **请求体**
-```json
-{
-  "name": ""
-}
-```
+## /control_robot_leju_claw 控制机器人夹爪（二指爪）运动
 
-# 机器人请求
-## POST 切换工作模式
-- **接口地址**：`POST /woosh/robot/SwitchWorkMode`
-- **请求体**
-```json
-{
-  "mode": 3
-}
-```
+### 1. 服务描述
 
----
+/control_robot_leju_claw 服务用于机器人夹爪（二指爪）的控制。
 
-## POST 初始化机器人
-- **接口地址**：`POST /woosh/robot/InitRobot`
-- **请求体**
-```json
-{
-  "isRecord": true
-}
-```
+**先决条件**：只有在 kuavo.json 中配置 EndEffectorType 为 lejuclaw 时才会启动该服务。修改配置文件 kuavo.json 的路径为 kuavo-ros-control/src/kuavo_assets/config/kuavo_v42/kuavo.json。注意要修改机器人型号对应的配置文件。
 
----
+### 2. 服务消息类型
 
-## POST 设置机器人位姿
-- **接口地址**：`POST /woosh/robot/SetRobotPose`
-- **请求体**
-```json
-{
-  "pose": {
-    "x": 12.3,
-    "y": 5.6,
-    "theta": 1.57
-  }
-}
-```
+kuavo_sdk/controlLejuClaw
 
----
+### 3. 请求格式
 
-## POST 切换控制模式
-- **接口地址**：`POST /woosh/robot/SwitchControlMode`
-- **请求体**
-```json
-{
-  "mode": 1
-}
-```
+| 字段 | 类型 | 描述 |
+|------|------|------|
+| data | kuavo_sdk/endEffectorData | 请求数据，夹爪相关的消息 |
 
----
+关于data字段，其中 kuavo_sdk/endEffectorData 的消息定义如下：
 
-## POST 切换地图
-- **接口地址**：`POST /woosh/robot/SwitchMap`
-- **请求体**
-```json
-{
-  "sceneName": "wooshmap",
-  "mapName": "wooshmap"
-}
-```
+| 字段 | 类型 | 描述 |
+|------|------|------|
+| name | string[] | 必填项，数组长度为2，数据为 "left_claw", "right_claw" |
+| position | float64[] | 必填项，数组长度为2，夹爪目标位置值，范围为0～100，表示行程占比，0为张开，100为闭合 |
+| velocity | float64[] | 选填项，数组长度为2，夹爪目标速度值，0～100，不填写时默认为50 |
+| effort | float64[] | 选填项，数组长度为2，夹爪目标电流，单位A，不填写时默认为1.0A |
 
----
+- name: 注意名称只能设置为 "left_claw" 或 "right_claw"
+- position: 范围 0～100，表示行程占比，0为张开，100为闭合
+- velocity: 速度，默认为50
+- effort: 力距，电机不会输出大于该值的电流，如果给的过小，可能运动效果受限，推荐1A~2A，默认为1.0A
 
-## POST 构图请求
-- **接口地址**：`POST /woosh/robot/BuildMap`
-- **请求体**
-```json
-{}
+### 4. 响应格式
+
+| 字段 | 类型 | 描述 |
+|------|------|------|
+| success | bool | 返回数据，是否调用成功 |
+| message | string | 返回数据，消息 |
+
+### 5. 使用示例
+
+```python
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+import rospy
+from kuavo_sdk.srv import controlLejuClaw, controlLejuClawRequest
+
+if __name__ == '__main__':
+    # 初始化ROS节点
+    rospy.init_node('leju_claw_client_node')
+
+    # 创建请求对象
+    req = controlLejuClawRequest()
+    req.data.name = ['left_claw', 'right_claw']
+    req.data.position = [90, 90]
+    req.data.velocity = [50, 50]
+    req.data.effort = [1.0, 1.0]
+
+    # 确保服务启动
+    rospy.wait_for_service('/control_robot_leju_claw')
+    
+    # 调用服务并获取响应
+    control_leju_claw = rospy.ServiceProxy('/control_robot_leju_claw', controlLejuClaw)
+    res = control_leju_claw(req)
 ```
 
 ---
 
-## POST 部署请求
-- **接口地址**：`POST /woosh/robot/Deployment`
-- **请求体**
-```json
-{}
+## /leju_claw_state 获取机器人夹爪（二指爪）状态
+
+### 1. 服务描述
+
+/leju_claw_state 话题用于发布机器人夹爪（二指爪）的状态，位置，速度，力矩等信息。
+
+**先决条件**：只有在 kuavo.json 中配置 EndEffectorType 为 leju_claw 时才会发布该话题。修改方法在 /control_robot_leju_claw 部分有介绍。
+
+### 2. 服务消息类型
+
+kuavo_sdk/lejuClawState
+
+### 3. 消息字段
+
+| 字段 | 类型 | 描述 |
+|------|------|------|
+| state | int8[] | 二指夹爪的状态，数组长度为2，第一个为左夹爪，第二个为右夹爪 |
+| data | kuavo_sdk/endEffectorData | 二指夹爪的位置，速度，力距等信息 |
+
+state状态值含义：
+- -1: Error，表示有执行时有错误
+- 0: Unknown，初始化时默认的状态
+- 1: Moving，表示夹爪正在执行，移动中
+- 2: Reached，表示夹爪已经执行到达期望的位置
+- 3: Grabbed，表示夹爪抓取到物品
+
+关于data字段中 kuavo_sdk/endEffectorData 的消息在 /control_robot_leju_claw 部分有介绍。
+
+### 4. 使用示例
+
+```python
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+import rospy
+from kuavo_sdk.msg import lejuClawState
+
+# 定义回调函数
+def leju_claw_state_callback(msg):
+    claw_state = msg.state
+    # 打印当前夹爪状态
+    rospy.loginfo(f"Current claw state: left={claw_state[0]}, right={claw_state[1]}")
+
+if __name__ == '__main__':
+    # 初始化ROS节点
+    rospy.init_node('leju_claw_state_node')
+
+    # 创建订阅者，监听 /leju_claw_state 话题
+    claw_state_sub = rospy.Subscriber('/leju_claw_state', lejuClawState, leju_claw_state_callback)
+    
+    rospy.spin()
 ```
 
 ---
 
-## POST 执行预定义任务
-- **接口地址**：`POST /woosh/robot/ExecPreTask`
-- **请求体**
-```json
-{
-  "taskSetId": 0
-}
-```
-
----
-
-## POST 执行任务
-- **接口地址**：`POST /woosh/robot/ExecTask`
-- **请求体**
-```json
-{
-  "taskId": 0,
-  "type": 0,
-  "direction": 0,
-  "taskTypeNo": 0,
-  "markNo": "string"
-}
-```
-
----
-
-## POST 动作指令
-- **接口地址**：`POST /woosh/robot/ActionOrder`
-- **请求体**
-```json
-{
-  "order": 0
-}
-```
-
----
-
-## POST 规划导航路径
-- **接口地址**：`POST /woosh/robot/PlanNavPath`
-- **请求体**
-```json
-{
-  "start": {
-    "x": 0,
-    "y": 0,
-    "theta": 0
-  },
-  "end": {
-    "x": 0,
-    "y": 0,
-    "theta": 0
-  },
-  "tolerance": 0
-}
-```
-
----
-
-## POST 改变导航路径
-- **接口地址**：`POST /woosh/robot/ChangeNavPath`
-- **请求体**
-```json
-{}
-```
-
----
-
-## POST 改变导航模式
-- **接口地址**：`POST /woosh/robot/ChangeNavMode`
-- **请求体**
-```json
-{}
-```
-
----
-
-## POST 语音播报
-- **接口地址**：`POST /woosh/robot/Speak`
-- **请求体**
-```json
-{
-  "text": "开始前往目标点"
-}
-```
-
----
-
-## POST 速度控制
-- **接口地址**：`POST /woosh/robot/Twist`
-- **请求体**
-```json
-{}
-```
-
----
-
-## POST 跟随
-- **接口地址**：`POST /woosh/robot/Follow`
-- **请求体**
-```json
-{}
-```
-
----
-
-## POST WIFi信息
-- **接口地址**：`POST /woosh/robot/RobotWiFi`
-- **请求体**
-```json
-{}
-```
-
----
-
-## POST 设置机器人占用
-- **接口地址**：`POST /woosh/robot/SetOccupancy`
-- **请求体**
-```json
-{
-  "pose": {
-    "x": 12.3,
-    "y": 5.6,
-    "theta": 1.57
-  }
-}
-```
-
-# 调度请求
-## POST 获取调度机器人信息
-- **接口地址**：`POST /woosh/dispatch/robot/Robot`
-- **请求体**
-```json
-{
-  "id": 30001
-}
-```
-
----
-
-## POST 获取调度机器人列表
-- **接口地址**：`POST /woosh/dispatch/robot/Robots`
-- **请求体**
-```json
-{}
-```
-
----
-
-## POST 切换场景
-- **接口地址**：`POST /woosh/dispatch/system/SwitchScene`
-- **请求体**
-```json
-{
-  "name": "wooshmap"
-}
-```
-
----
-
-## POST 获取当前场景
-- **接口地址**：`POST /woosh/dispatch/system/SceneSettings`
-- **请求体**
-```json
-{}
-```
-
----
-
-## POST 查找任务
-- **接口地址**：`POST /woosh/dispatch/task/FindTask`
-- **请求体**
-```json
-{
-  "id": 0,
-  "gteType": 1,
-  "lteType": 2,
-  "robotId": 30001,
-  "page": 0
-}
-```
-
----
-
-## POST 任务指令
-- **接口地址**：`POST /woosh/dispatch/task/TaskOrder`
-- **请求体**
-```json
-{
-  "id": 681348376,
-  "order": 2
-}
-```
-
----
-
-## POST 指定机器人充电
-- **接口地址**：`POST /woosh/dispatch/system/GotoCharge`
-- **请求体**
-```json
-{
-  "robot": 30001
-}
-```
-
----
-
-## POST 置顶任务
-- **接口地址**：`POST /woosh/dispatch/task/StickTask`
-- **请求体**
-```json
-{
-  "id": 681348378,
-  "unstick": false
-}
-```
-
----
-
-## POST 添加任务
-- **接口地址**：`POST /woosh/task/AddTask`
-- **请求体**
-```json
-{
-  "tset": {
-    "base": {
-      "name": "A10-K11",
-      "priority": 0,
-      "robots": [],
-      "rtype": 1
-    },
-    "custom": {
-      "auto_complete": true
-    },
-    "tasks": [
-      {
-        "base": {
-          "cannot_cancel": false,
-          "custom": "",
-          "direction": 0,
-          "id": 1,
-          "mark_no": "A10",
-          "name": "A10",
-          "type": 1,
-          "type_no": 0,
-          "wait_time": 0
-        }
-      }
-    ]
-  }
-}
-```
-
----
-
-## POST 充电配置
-- **接口地址**：`POST /woosh/dispatch/system/ChargeSettings`
-- **请求体**
-```json
-{
-  "settings": [
-    {
-      "level": 1,
-      "guardPower": 10,
-      "lowPower": 20,
-      "workPower": 60,
-      "fullPower": 100,
-      "time": 0
-    }
-  ]
-}
-```
-
----
-
-## POST 泊车充电记录表
-- **接口地址**：`POST /woosh/dispatch/system/PacAccountList`
-- **请求体**
-```json
-{}
-```
-
----
-
-## POST 修改泊车充电记录
-- **接口地址**：`POST /woosh/dispatch/system/PacAccount`
-- **请求体**
-```json
-{}
-```
-
-# 设备请求/callbox
-## POST 上线
-- **接口地址**：`POST /woosh/device/callbox/Online`
-- **请求体**
-```json
-{
-  "callbox": {
-    "no": "cb110",
-    "keyNum": 4,
-    "keys": [{"id": 1},{"id": 2},{"id": 3},{"id": 4}]
-  }
-}
-```
-
----
-
-## POST 下线
-- **接口地址**：`POST /woosh/device/callbox/Offline`
-- **请求体**
-```json
-{
-  "no": "cb110"
-}
-```
-
----
-
-## POST 呼叫
-- **接口地址**：`POST /woosh/device/callbox/Call`
-- **请求体**
-```json
-{
-  "event": {
-    "no": "cb110",
-    "key": 1,
-    "type": 1
-  }
-}
-```
-
----
-
-## POST 获取指定呼叫盒
-- **接口地址**：`POST /woosh/device/callbox/Callbox`
-- **请求体**
-```json
-{
-  "no": "cb110"
-}
-```
-
----
-
-## POST 获取呼叫盒列表
-- **接口地址**：`POST /woosh/device/callbox/Callboxs`
-- **请求体**
-```json
-{}
-```
-
----
-
-## POST 获取呼叫器列表
-- **接口地址**：`POST /woosh/device/callbox/Callers`
-- **请求体**
-```json
-{}
-```
-
-# 测试
-## POST etcd watch
-- **接口地址**：`POST /v3alpha/watch`
-- **请求体**
-```json
-{}
-```
-
-## GET google
-- **接口地址**：`GET /`
-- **返回示例**
-```json
-{}
-```
-
-# 数据模型
+**以上即为文档的完整复现内容**，共23页全部涵盖。
