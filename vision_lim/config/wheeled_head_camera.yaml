@@ -1,0 +1,26 @@
+# 轮臂机器人：头顶 RGB-D 相机向下俯视
+# 坐标约定（与 Kuavo IK / interface.md 示例一致）:
+#   机械臂基座系: X 前, Y 左, Z 上
+#   相机 optical: X 右, Y 下, Z 前 (深度沿 +Z)
+
+camera_frame: "camera_depth_optical_frame"
+# IK 正解/逆解使用的末端参考系，按 rostopic tf 实际名称修改
+ik_target_frames:
+  - "base_link"
+  - "torso"
+  - "pelvis"
+  - "odom"
+  - "base"
+
+# 静态变换（未读到 tf 时使用，请按实机标定微调）
+static_transform:
+  # 相机光轴相对水平面向下俯仰角（度）
+  pitch_deg: 48.0
+  # 相机光心在 IK 基座系中的位置 [x前, y左, z上]（米）
+  camera_position_in_base: [0.12, 0.0, 0.55]
+  # 图像 x 向右 -> 基座 Y 分量系数（右手抓取侧物体常为负 Y，取 -1）
+  lateral_sign: -1.0
+
+grasp_offsets:
+  pre_grasp_z: 0.10
+  grasp_depth_z: 0.0

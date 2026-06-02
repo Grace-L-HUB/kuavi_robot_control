@@ -20,19 +20,65 @@ from __future__ import annotations
 
 import argparse
 import glob
+import json
 import math
 import os
 import sys
 import traceback
+from pathlib import Path
 
-# ---------- 已计算目标坐标（米，基座系）----------
-TARGET_X = -0.044330238372661326
-TARGET_Y = 0.08261372036424994
-TARGET_Z = 0.64
+# 允许从 Kuavi_bot_control 或 opensource 旁路导入 vision_lim
+_SCRIPT_DIR = Path(__file__).resolve().parent
+for _repo in (_SCRIPT_DIR.parent, _SCRIPT_DIR.parent.parent):
+    _vl = _repo / "vision_lim"
+    if _vl.is_dir() and str(_repo) not in sys.path:
+        sys.path.insert(0, str(_repo))
 
-PRE_GRASP = (TARGET_X, TARGET_Y, 0.79)
-GRASP_POS = (TARGET_X, TARGET_Y, 0.69)
-RETREAT = (TARGET_X, TARGET_Y, 0.79)
+try:
+    from vision_lim.wheeled_camera_transform import (
+        DEFAULT_CAMERA_POINT,
+        load_wheeled_camera_config,
+        resolve_grasp_poses_arm_base,
+    )
+except ImportError:
+    DEFAULT_CAMERA_POINT = (-0.044330238372661326, 0.08261372036424994, 0.64)
+
+    def load_wheeled_camera_config(path=None):
+        return {
+            "camera_frame": "camera_depth_optical_frame",
+            "ik_target_frames": ["base_link", "torso", "pelvis"],
+            "static_transform": {
+                "pitch_deg": 48.0,
+                "camera_position_in_base": [0.12, 0.0, 0.55],
+                "lateral_sign": -1.0,
+            },
+            "grasp_offsets": {"pre_grasp_z": 0.10, "grasp_depth_z": 0.0},
+        }
+
+    def resolve_grasp_poses_arm_base(point_cam, config=None, use_tf=False):
+        st = (config or load_wheeled_camera_config())["static_transform"]
+        p = math.radians(float(st["pitch_deg"]))
+        c, s = math.cos(p), math.sin(p)
+        x_c, y_c, z_c = point_cam
+        cx, cy, cz = st["camera_position_in_base"]
+        lat = float(st.get("lateral_sign", -1.0))
+        arm = (cx + z_c * c + y_c * s, cy + lat * x_c, cz - z_c * s + y_c * c * 0.35)
+        pre_z = 0.10
+        grasp = arm
+        pre = (grasp[0], grasp[1], grasp[2] + pre_z)
+        return {
+            "camera_coord_m": list(point_cam),
+            "arm_coord_m": list(grasp),
+            "pre_grasp": list(pre),
+            "grasp": list(grasp),
+            "retreat": list(pre),
+            "transform_method": "static_pitch_embedded",
+        }
+
+# 运行时由相机系坐标换算，勿再把相机 Z 直接当机械臂高度
+PRE_GRASP: tuple = (0.0, 0.0, 0.0)
+GRASP_POS: tuple = (0.0, 0.0, 0.0)
+RETREAT: tuple = (0.0, 0.0, 0.0)
 
 GRASP_QUAT = [0.0, -0.70682518, 0.0, 0.70738827]
 
@@ -323,12 +369,47 @@ def _claw_cmd(hand: str, position: int, velocity: int = 50, effort: float = 1.5)
     return True
 
 
+def _load_camera_point_from_json(path: Path) -> tuple:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    cc = data.get("camera_coord_m")
+    if cc and len(cc) >= 3:
+        return (float(cc[0]), float(cc[1]), float(cc[2]))
+    raise ValueError(f"{path} 缺少 camera_coord_m")
+
+
+def _apply_grasp_coordinates(
+    camera_point: tuple,
+    config_path: str,
+    use_tf: bool,
+) -> None:
+    global PRE_GRASP, GRASP_POS, RETREAT
+
+    cfg = load_wheeled_camera_config(config_path if config_path else None)
+    poses = resolve_grasp_poses_arm_base(camera_point, cfg, use_tf=use_tf)
+
+    PRE_GRASP = tuple(poses["pre_grasp"])
+    GRASP_POS = tuple(poses["grasp"])
+    RETREAT = tuple(poses["retreat"])
+
+    _log(f"[坐标] 相机 optical (m): {camera_point}")
+    _log(f"[坐标] 变换方式: {poses['transform_method']}")
+    _log(f"[坐标] IK 基座 抓取点 (m): {GRASP_POS}")
+    _log(f"[坐标] IK 基座 预抓取 (m): {PRE_GRASP}")
+    _log(
+        "[坐标] 说明: 头顶俯视相机 — 深度沿光轴 Z，不能直接把 Z 当机械臂高度；"
+        "若仍偏差请调 vision_lim/config/wheeled_head_camera.yaml"
+    )
+
+
 def run_grasp(hand: str, grasp_width: int, grasp_effort: float,
-              skip_gripper: bool, skip_arm_mode: bool) -> bool:
+              skip_gripper: bool, skip_arm_mode: bool,
+              camera_point: tuple, config_path: str, use_tf: bool) -> bool:
     import rospy
 
     rospy.init_node("grasp_from_offline_vision", anonymous=True)
     _log("[0] ROS 节点已启动")
+
+    _apply_grasp_coordinates(camera_point, config_path, use_tf)
 
     if not skip_arm_mode:
         if not _set_arm_mode_external():
@@ -397,11 +478,56 @@ def main() -> int:
     parser.add_argument("--skip-gripper", action="store_true")
     parser.add_argument("--skip-arm-mode", action="store_true",
                         help="不调用 arm_traj_change_mode（已在外部模式时用）")
+    parser.add_argument(
+        "--grasp-json",
+        default=str(_SCRIPT_DIR.parent / "grasp_target.json"),
+        help="含 camera_coord_m 的 JSON（默认仓库根目录 grasp_target.json）",
+    )
+    parser.add_argument(
+        "--camera-coord",
+        nargs=3,
+        type=float,
+        metavar=("X", "Y", "Z"),
+        help="覆盖 JSON，直接指定相机 optical 坐标 (m)",
+    )
+    parser.add_argument(
+        "--camera-config",
+        default="",
+        help="wheeled_head_camera.yaml 路径，默认 vision_lim/config/...",
+    )
+    parser.add_argument(
+        "--use-tf",
+        action="store_true",
+        help="用 /tf 将相机点变换到 base_link（需 ros_interface 发布 tf）",
+    )
+    parser.add_argument(
+        "--dry-coords",
+        action="store_true",
+        help="只打印坐标变换结果，不控制机械臂",
+    )
     args = parser.parse_args()
 
-    _log(f"目标 pre={PRE_GRASP} grasp={GRASP_POS} hand={args.hand}")
+    if args.camera_coord:
+        camera_point = tuple(args.camera_coord)
+    else:
+        jpath = Path(args.grasp_json)
+        if not jpath.is_file():
+            camera_point = DEFAULT_CAMERA_POINT
+            _log(f"[坐标] 未找到 {jpath}，使用默认相机点")
+        else:
+            camera_point = _load_camera_point_from_json(jpath)
+
+    if args.dry_coords:
+        cfg_path = args.camera_config or None
+        if args.use_tf:
+            _check_ros_packages()
+            import rospy
+            rospy.init_node("grasp_coord_preview", anonymous=True)
+        _apply_grasp_coordinates(camera_point, cfg_path or "", args.use_tf)
+        return 0
 
     _check_ros_packages()
+    _log(f"hand={args.hand} 相机点={camera_point} use_tf={args.use_tf}")
 
     try:
         ok = run_grasp(
@@ -410,6 +536,9 @@ def main() -> int:
             grasp_effort=args.grasp_effort,
             skip_gripper=args.skip_gripper,
             skip_arm_mode=args.skip_arm_mode,
+            camera_point=camera_point,
+            config_path=args.camera_config,
+            use_tf=args.use_tf,
         )
         return 0 if ok else 1
     except Exception:
