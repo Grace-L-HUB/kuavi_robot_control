@@ -1,4 +1,5 @@
-# 轮臂机器人：头顶 RGB-D 向下俯视 -> IK 基座系 (X前 Y左 Z上)
+# 轮臂：头顶相机俯视 -> IK 基座 (X前 Y左 Z上)
+# 水瓶在机器人正前方偏下：X 偏大、|Y| 偏小、Z 偏低（桌面高度）
 
 camera_frame: "camera_depth_optical_frame"
 ik_target_frames:
@@ -12,32 +13,35 @@ static_transform:
   pitch_deg: 48.0
   camera_position_in_base: [0.12, 0.0, 0.55]
   lateral_sign: -1.0
+  # 深度更多映射到前方，减少抬高
+  forward_depth_scale: 1.08
+  height_from_depth_scale: 1.0
 
-# 抓取位姿修正（在静态/ tf 变换之后叠加）
 grasp_offsets:
-  # 加大前方距离：物体离机器人太近时增大此值
-  forward_extra_m: 0.22
-  depth_forward_scale: 1.05
-  # 右手抓取：基座 Y 左为正，右手侧物体常为负 Y
-  right_y_bias: -0.18
-  left_y_bias: 0.18
+  # 前方：深度已给出 ~0.5m 前向，额外少量即可（避免过远）
+  forward_extra_m: 0.10
+  depth_forward_scale: 1.0
+  # 正前方略偏右：右手 Y 为负，幅度不宜过大
+  right_y_bias: -0.08
+  left_y_bias: 0.08
+  # 整体压低到桌面高度（米）
+  grasp_z_bias: -0.06
   grasp_depth_z: 0.0
-  # 水平接近：预抓取在抓取点后方（-X），再前伸至抓取点
-  pre_grasp_back_m: 0.14
-  pre_grasp_lift_z: 0.05
-  retreat_back_m: 0.12
-  retreat_lift_z: 0.08
+  pre_grasp_back_m: 0.12
+  pre_grasp_lift_z: 0.03
+  retreat_back_m: 0.10
+  retreat_lift_z: 0.06
 
-# 末端姿态 quat_xyzw（相对 IK 基座）
-# 水平前向抓取：夹爪朝前伸、张开口大致竖直（由掌心朝下绕 Y 轴转 90° 近似）
+# 末端 quat_xyzw（相对 IK 基座）
+# 错误 [0.5,-0.5,0.5,0.5] ≈ 掌心朝下 * RotX(+90°) → 夹爪竖直、肩侧近水平
+# 正确 ≈ 掌心朝下 * RotX(-90°) → 夹爪水平朝前、肩侧更接近竖直
 end_effector_orientation:
   palm_down: [0.0, -0.70682518, 0.0, 0.70738827]
   right:
-    quat_xyzw: [0.5, -0.5, 0.5, 0.5]
+    quat_xyzw: [-0.5002, -0.4998, -0.4998, 0.5002]
   left:
-    quat_xyzw: [0.5, 0.5, 0.5, -0.5]
+    quat_xyzw: [0.5002, -0.4998, 0.4998, 0.5002]
 
-# 非抓取侧手臂待机位（IK 需双手有效位姿）
 inactive_arm_pose:
   left: [0.45, 0.25, 0.11988012]
   right: [0.45, -0.25, 0.11988012]

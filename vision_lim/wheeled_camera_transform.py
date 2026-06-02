@@ -83,15 +83,21 @@ def camera_optical_to_base_static(
     pitch_deg: float,
     camera_position_in_base: Tuple[float, float, float],
     lateral_sign: float = -1.0,
+    st_extra: Optional[Dict] = None,
 ) -> Tuple[float, float, float]:
     x_c, y_c, z_c = point_cam
     cx, cy, cz = camera_position_in_base
     p = math.radians(pitch_deg)
     c, s = math.cos(p), math.sin(p)
+    st = st_extra or {}
 
-    x_b = cx + z_c * c + y_c * s
+    fwd_scale = float(st.get("forward_depth_scale", 1.08))
+    h_scale = float(st.get("height_from_depth_scale", 1.0))
+
+    x_b = cx + z_c * c * fwd_scale + y_c * s * 0.5
     y_b = cy + lateral_sign * x_c
-    z_b = cz - z_c * s + y_c * c * 0.35
+    # 俯视深度主要转为“前方”，高度仅保留一部分，避免抬过高
+    z_b = cz - z_c * s * h_scale + y_c * c * 0.15
 
     return (x_b, y_b, z_b)
 
@@ -113,7 +119,7 @@ def _apply_grasp_offsets(
     else:
         gy = cy + float(off.get("left_y_bias", 0.0))
 
-    gz = cz + float(off.get("grasp_depth_z", 0.0))
+    gz = cz + float(off.get("grasp_depth_z", 0.0)) + float(off.get("grasp_z_bias", 0.0))
     return (gx, gy, gz)
 
 
@@ -177,6 +183,7 @@ def resolve_grasp_poses_arm_base(
             float(st.get("pitch_deg", 48.0)),
             (float(cam_pos[0]), float(cam_pos[1]), float(cam_pos[2])),
             float(st.get("lateral_sign", -1.0)),
+            st_extra=st,
         )
         method = "static_pitch"
 

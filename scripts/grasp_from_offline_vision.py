@@ -55,17 +55,17 @@ except ImportError:
                 "lateral_sign": -1.0,
             },
             "grasp_offsets": {
-                "forward_extra_m": 0.22,
-                "depth_forward_scale": 1.05,
-                "right_y_bias": -0.18,
-                "pre_grasp_back_m": 0.14,
-                "pre_grasp_lift_z": 0.05,
-                "retreat_back_m": 0.12,
-                "retreat_lift_z": 0.08,
+                "forward_extra_m": 0.10,
+                "right_y_bias": -0.08,
+                "grasp_z_bias": -0.06,
+                "pre_grasp_back_m": 0.12,
+                "pre_grasp_lift_z": 0.03,
+                "retreat_back_m": 0.10,
+                "retreat_lift_z": 0.06,
             },
             "end_effector_orientation": {
                 "palm_down": [0.0, -0.70682518, 0.0, 0.70738827],
-                "right": {"quat_xyzw": [0.5, -0.5, 0.5, 0.5]},
+                "right": {"quat_xyzw": [-0.5002, -0.4998, -0.4998, 0.5002]},
             },
             "inactive_arm_pose": {
                 "left": [0.45, 0.25, 0.11988012],
@@ -75,7 +75,9 @@ except ImportError:
 
     def get_grasp_quat(hand, config=None):
         eo = (config or load_wheeled_camera_config()).get("end_effector_orientation", {})
-        return list(eo.get("right", {}).get("quat_xyzw", [0.5, -0.5, 0.5, 0.5]))
+        return list(eo.get("right", {}).get(
+            "quat_xyzw", [-0.5002, -0.4998, -0.4998, 0.5002]
+        ))
 
     def get_inactive_arm_pose(hand, config=None):
         p = (config or load_wheeled_camera_config()).get("inactive_arm_pose", {})
@@ -92,9 +94,9 @@ except ImportError:
         cx, cy, cz = st["camera_position_in_base"]
         lat = float(st.get("lateral_sign", -1.0))
         x_b = cx + z_c * c + y_c * s
-        x_b += float(off.get("forward_extra_m", 0.22))
-        y_b = cy + lat * x_c + float(off.get("right_y_bias", -0.18))
-        z_b = cz - z_c * s + y_c * c * 0.35
+        x_b += float(off.get("forward_extra_m", 0.10))
+        y_b = cy + lat * x_c + float(off.get("right_y_bias", -0.08))
+        z_b = cz - z_c * s + y_c * c * 0.15 + float(off.get("grasp_z_bias", -0.06))
         grasp = (x_b, y_b, z_b)
         pre = (
             grasp[0] - float(off.get("pre_grasp_back_m", 0.14)),
@@ -121,7 +123,7 @@ except ImportError:
 PRE_GRASP: tuple = (0.0, 0.0, 0.0)
 GRASP_POS: tuple = (0.0, 0.0, 0.0)
 RETREAT: tuple = (0.0, 0.0, 0.0)
-ACTIVE_GRASP_QUAT = [0.5, -0.5, 0.5, 0.5]
+ACTIVE_GRASP_QUAT = [-0.5002, -0.4998, -0.4998, 0.5002]
 PALM_DOWN_QUAT = [0.0, -0.70682518, 0.0, 0.70738827]
 INACTIVE_LEFT_POS = [0.45, 0.25, 0.11988012]
 INACTIVE_RIGHT_POS = [0.45, -0.25, 0.11988012]
