@@ -1,27 +1,31 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-固定坐标抓取（单文件，对齐 Kuavo 开源 SDK / interface.md 调用方式）。
+固定坐标抓取（单文件，对齐 Kuavo 开源 SDK / interface.md）。
 
-可单独拷到下位机任意目录运行，仅需 ROS 环境 + kuavo_sdk + motion_capture_ik。
-
-用法:
+【重要】必须先 source Kuavo 工作空间，否则 No module named 'kuavo_sdk'：
   source /opt/ros/noetic/setup.bash
-  source ~/kuavo-ros-control/devel/setup.bash
-  python3 grasp_from_offline_vision.py --hand right
+  source /home/lab/kuavo-ros-control/devel/setup.bash   # 按实际路径修改
+  python3 scripts/grasp_from_offline_vision.py --hand right
 
-  # 若夹爪服务未启用
-  python3 grasp_from_offline_vision.py --hand right --skip-gripper
+脚本放在 opensource/scripts 时:
+  cd /path/to/opensource/scripts
+  bash run_grasp.sh --hand right
+
+或一键（在 Kuavi_bot_control 仓库内）:
+  bash scripts/run_grasp.sh --hand right
 """
 
 from __future__ import annotations
 
 import argparse
+import glob
 import math
+import os
 import sys
 import traceback
 
-# ---------- 已计算目标坐标（米，基座系；与 grasp_target.json 一致）----------
+# ---------- 已计算目标坐标（米，基座系）----------
 TARGET_X = -0.044330238372661326
 TARGET_Y = 0.08261372036424994
 TARGET_Z = 0.64
@@ -30,7 +34,6 @@ PRE_GRASP = (TARGET_X, TARGET_Y, 0.79)
 GRASP_POS = (TARGET_X, TARGET_Y, 0.69)
 RETREAT = (TARGET_X, TARGET_Y, 0.79)
 
-# 掌心朝下（interface.md 示例四元数 [qx,qy,qz,qw]）
 GRASP_QUAT = [0.0, -0.70682518, 0.0, 0.70738827]
 
 IK_SERVICE_CANDIDATES = (
@@ -43,8 +46,90 @@ def _log(msg: str) -> None:
     print(msg, flush=True)
 
 
+def _bootstrap_kuavo_python_path() -> None:
+    """把 catkin devel 下的 dist-packages 加入 sys.path（未 source 时的补救）。"""
+    candidates = []
+
+    if os.environ.get("PYTHONPATH"):
+        candidates.extend(p for p in os.environ["PYTHONPATH"].split(":") if p)
+
+    home = os.path.expanduser("~")
+    for base in ("/home/lab", home, "/opt"):
+        if not os.path.isdir(base):
+            continue
+        pattern = os.path.join(base, "*", "devel", "lib", "python3", "dist-packages")
+        candidates.extend(glob.glob(pattern))
+
+    for fixed in (
+        "/home/lab/kuavo-ros-control/devel/lib/python3/dist-packages",
+        os.path.join(home, "kuavo-ros-control/devel/lib/python3/dist-packages"),
+    ):
+        candidates.append(fixed)
+
+    seen = set()
+    added = []
+    for p in candidates:
+        if not p or p in seen or not os.path.isdir(p):
+            continue
+        seen.add(p)
+        if p not in sys.path:
+            sys.path.insert(0, p)
+            added.append(p)
+
+    if added:
+        _log("[环境] 已添加 Python 路径:")
+        for p in added:
+            _log(f"       {p}")
+
+
+def _check_ros_packages() -> None:
+    """确认 kuavo_sdk / motion_capture_ik 可导入。"""
+    _bootstrap_kuavo_python_path()
+    missing = []
+    for mod in ("kuavo_sdk", "motion_capture_ik"):
+        try:
+            __import__(mod)
+            _log(f"[环境] {mod} OK")
+        except ImportError:
+            missing.append(mod)
+
+    if not missing:
+        return
+
+    _log("")
+    _log("[错误] 缺少 Python 包: " + ", ".join(missing))
+    _log("请先 source Kuavo catkin 工作空间，再运行本脚本。示例：")
+    _log("  source /opt/ros/noetic/setup.bash")
+    _log("  source /home/lab/kuavo-ros-control/devel/setup.bash")
+    _log("  python3 scripts/grasp_from_offline_vision.py --hand right")
+    _log("")
+    _log("或（推荐）:")
+    _log("  bash scripts/run_grasp.sh --hand right")
+    _log("")
+    _log("若工作空间不在默认路径，可指定：")
+    _log("  export KUAVO_WS_SETUP=/你的路径/kuavo-ros-control/devel/setup.bash")
+    _log("  bash scripts/run_grasp.sh --hand right")
+    raise SystemExit(1)
+
+
 def _rad_to_deg_14(q_rad) -> list:
     return [math.degrees(float(x)) for x in q_rad[:14]]
+
+
+def _call_with_retry(fn, label: str, retries: int = 3, pause: float = 1.0):
+    """ROS 服务偶发 TransportTerminated 时重试。"""
+    import rospy
+
+    last_err = None
+    for i in range(retries):
+        try:
+            return fn()
+        except rospy.exceptions.ROSException as e:
+            last_err = e
+            _log(f"[{label}] 失败 ({i + 1}/{retries}): {e}")
+            if i + 1 < retries:
+                rospy.sleep(pause)
+    raise last_err
 
 
 def _wait_for_connections(pub, timeout: float = 5.0) -> bool:
@@ -59,7 +144,6 @@ def _wait_for_connections(pub, timeout: float = 5.0) -> bool:
 
 
 def _resolve_ik_proxy():
-    """与官方示例一致，兼容带/不带 /ik 前缀的服务名。"""
     import rospy
     from motion_capture_ik.srv import twoArmHandPoseCmdSrv
 
@@ -84,7 +168,6 @@ def _solve_ik(ik_proxy, pos, quat, hand: str):
     req = twoArmHandPoseCmd()
     req.use_custom_ik_param = False
     req.joint_angles_as_q0 = False
-
     zero3 = np.zeros(3)
     if hand == "left":
         req.hand_poses.left_pose.pos_xyz = np.array(pos, dtype=float)
@@ -95,27 +178,62 @@ def _solve_ik(ik_proxy, pos, quat, hand: str):
         req.hand_poses.right_pose.quat_xyzw = quat
         req.hand_poses.right_pose.elbow_pos_xyz = zero3
 
-    resp = ik_proxy(req)
+    def _do_ik():
+        return ik_proxy(req)
+
+    try:
+        resp = _call_with_retry(_do_ik, "IK", retries=2, pause=1.5)
+    except Exception as e:
+        _log(f"[IK] 服务通信失败 pos={pos}: {e}")
+        _log("[IK] 请查看 IK 节点日志: rosnode list | grep ik")
+        return None
+
     if not resp.success:
-        _log(f"[IK] 求解失败 pos={pos}")
+        _log(f"[IK] 求解失败 pos={pos}（目标可能超出工作空间）")
         return None
     q = list(resp.q_arm)
     _log(f"[IK] 成功 joints={len(q)} time_cost={getattr(resp, 'time_cost', '?')}ms")
     return q
 
 
-def _set_arm_mode_external() -> None:
+def _set_arm_mode_external() -> bool:
+    """切换外部控制；失败不抛异常，由调用方决定是否继续。"""
+    import subprocess
     import rospy
     from kuavo_sdk.srv import changeArmCtrlMode, changeArmCtrlModeRequest
 
-    rospy.wait_for_service("/arm_traj_change_mode", timeout=5.0)
-    cli = rospy.ServiceProxy("/arm_traj_change_mode", changeArmCtrlMode)
-    req = changeArmCtrlModeRequest()
-    req.control_mode = 2
-    res = cli(req)
-    if not res.result:
-        raise RuntimeError(f"arm_traj_change_mode 失败: {res.message}")
-    _log("[手臂] 外部控制模式 mode=2 已设置")
+    _log("[1] 调用 /arm_traj_change_mode (mode=2) ...")
+
+    def _do_call():
+        rospy.wait_for_service("/arm_traj_change_mode", timeout=8.0)
+        cli = rospy.ServiceProxy("/arm_traj_change_mode", changeArmCtrlMode)
+        req = changeArmCtrlModeRequest()
+        req.control_mode = 2
+        return cli(req)
+
+    try:
+        res = _call_with_retry(_do_call, "arm_traj_change_mode", retries=2)
+        if not res.result:
+            _log(f"[手臂] mode 服务返回失败: {res.message}")
+            return False
+        _log("[手臂] 外部控制 mode=2 OK")
+        return True
+    except Exception as e:
+        _log(f"[手臂] Python 服务调用失败: {e}")
+        _log("[手臂] 尝试 rosservice call 备用 ...")
+        try:
+            subprocess.run(
+                ["rosservice", "call", "/arm_traj_change_mode", "control_mode: 2"],
+                check=True,
+                timeout=15,
+                capture_output=True,
+                text=True,
+            )
+            _log("[手臂] rosservice 切换 mode=2 OK")
+            return True
+        except Exception as e2:
+            _log(f"[手臂] rosservice 也失败: {e2}")
+            return False
 
 
 def _publish_arm_timed(pub, q_rad, duration: float) -> None:
@@ -126,30 +244,29 @@ def _publish_arm_timed(pub, q_rad, duration: float) -> None:
     msg.times = [float(duration)]
     msg.values = _rad_to_deg_14(q_rad)
     pub.publish(msg)
-    _log(f"[手臂] 已发布 kuavo_arm_target_poses duration={duration}s values(deg)前3={msg.values[:3]}...")
+    _log(f"[手臂] kuavo_arm_target_poses {duration}s, deg[:3]={msg.values[:3]}")
     rospy.sleep(duration + 0.5)
 
 
-def _publish_arm_traj_fallback(q_rad) -> None:
-    """armTargetPoses 不可用时，用 /kuavo_arm_traj（度）。"""
+def _publish_arm_traj(q_rad, duration: float) -> None:
     import rospy
     from sensor_msgs.msg import JointState
 
     pub = rospy.Publisher("/kuavo_arm_traj", JointState, queue_size=10, latch=True)
-    _wait_for_connections(pub, timeout=3.0)
+    _wait_for_connections(pub, timeout=5.0)
     msg = JointState()
     msg.name = [f"arm_joint_{i}" for i in range(1, 15)]
     msg.header.stamp = rospy.Time.now()
     msg.position = _rad_to_deg_14(q_rad)
-    pub.publish(msg)
-    _log("[手臂] 已发布 /kuavo_arm_traj (fallback)")
-    rospy.sleep(2.5)
+    for _ in range(3):
+        pub.publish(msg)
+        rospy.sleep(0.1)
+    _log(f"[手臂] /kuavo_arm_traj 已发布, 等待 {duration}s")
+    rospy.sleep(duration)
 
 
 def _move_to(ik_proxy, arm_pub, pos, hand: str, duration: float, label: str,
              use_target_poses: bool) -> bool:
-    import rospy
-
     _log(f"[运动] {label} -> ({pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f})")
     q = _solve_ik(ik_proxy, pos, GRASP_QUAT, hand)
     if q is None:
@@ -157,7 +274,7 @@ def _move_to(ik_proxy, arm_pub, pos, hand: str, duration: float, label: str,
     if use_target_poses and arm_pub is not None:
         _publish_arm_timed(arm_pub, q, duration)
     else:
-        _publish_arm_traj_fallback(q)
+        _publish_arm_traj(q, duration)
     return True
 
 
@@ -165,49 +282,66 @@ def _claw_cmd(hand: str, position: int, velocity: int = 50, effort: float = 1.5)
     import rospy
     from kuavo_sdk.srv import controlLejuClaw, controlLejuClawRequest
 
-    rospy.wait_for_service("/control_robot_leju_claw", timeout=5.0)
-    cli = rospy.ServiceProxy("/control_robot_leju_claw", controlLejuClaw)
-    req = controlLejuClawRequest()
     claw = f"{hand}_claw"
-    req.data.name = [claw]
-    req.data.position = [float(position)]
-    req.data.velocity = [float(velocity)]
-    req.data.effort = [float(effort)]
-    res = cli(req)
+
+    def _do_claw():
+        rospy.wait_for_service("/control_robot_leju_claw", timeout=8.0)
+        cli = rospy.ServiceProxy("/control_robot_leju_claw", controlLejuClaw)
+        req = controlLejuClawRequest()
+        req.data.name = [claw]
+        req.data.position = [float(position)]
+        req.data.velocity = [float(velocity)]
+        req.data.effort = [float(effort)]
+        return cli(req)
+
+    try:
+        res = _call_with_retry(_do_claw, "夹爪", retries=2)
+    except Exception as e:
+        _log(f"[夹爪] 通信失败: {e}")
+        return False
+
     if not res.success:
         _log(f"[夹爪] 失败: {getattr(res, 'message', res)}")
         return False
-    _log(f"[夹爪] {claw} position={position}")
+    _log(f"[夹爪] {claw} pos={position}")
     return True
 
 
-def run_grasp(hand: str, grasp_width: int, grasp_effort: float, skip_gripper: bool) -> bool:
+def run_grasp(hand: str, grasp_width: int, grasp_effort: float,
+              skip_gripper: bool, skip_arm_mode: bool) -> bool:
     import rospy
-    from kuavo_sdk.msg import armTargetPoses
 
     rospy.init_node("grasp_from_offline_vision", anonymous=True)
     _log("[0] ROS 节点已启动")
 
-    _set_arm_mode_external()
-    rospy.sleep(0.3)
+    if not skip_arm_mode:
+        if not _set_arm_mode_external():
+            _log(
+                "[手臂] 未能切换外部控制，继续执行。"
+                "若手臂不动请改用: --skip-arm-mode 或先手动切到外部控制"
+            )
+        rospy.sleep(0.5)
+    else:
+        _log("[手臂] 跳过 mode 设置 (--skip-arm-mode)")
 
-    use_target_poses = True
+    use_target_poses = False
     arm_pub = None
     try:
+        from kuavo_sdk.msg import armTargetPoses
+
         arm_pub = rospy.Publisher(
             "/kuavo_arm_target_poses", armTargetPoses, queue_size=10, latch=True
         )
-        if not _wait_for_connections(arm_pub, timeout=5.0):
-            _log("[警告] /kuavo_arm_target_poses 无订阅者，将尝试 /kuavo_arm_traj")
-            use_target_poses = False
-            arm_pub = None
+        if _wait_for_connections(arm_pub, timeout=3.0):
+            use_target_poses = True
+            _log("[手臂] 使用 /kuavo_arm_target_poses")
         else:
-            _log("[手臂] /kuavo_arm_target_poses 已有订阅者")
+            arm_pub = None
+            _log("[手臂] 无订阅者，改用 /kuavo_arm_traj")
     except Exception as e:
-        _log(f"[警告] armTargetPoses 不可用: {e}")
-        use_target_poses = False
-        arm_pub = None
+        _log(f"[手臂] armTargetPoses 不可用 ({e})，改用 /kuavo_arm_traj")
 
+    _log("[2] 连接 IK 服务 ...")
     ik_proxy = _resolve_ik_proxy()
 
     if not skip_gripper:
@@ -217,11 +351,11 @@ def run_grasp(hand: str, grasp_width: int, grasp_effort: float, skip_gripper: bo
         except Exception as e:
             _log(f"[夹爪] 张开跳过: {e}")
     else:
-        _log("[夹爪] 已跳过 (--skip-gripper)")
+        _log("[夹爪] --skip-gripper")
 
     if not _move_to(ik_proxy, arm_pub, PRE_GRASP, hand, 2.0, "预抓取", use_target_poses):
         return False
-    if not _move_to(ik_proxy, arm_pub, GRASP_POS, hand, 3.0, "下降抓取", use_target_poses):
+    if not _move_to(ik_proxy, arm_pub, GRASP_POS, hand, 3.0, "下降", use_target_poses):
         return False
 
     if not skip_gripper:
@@ -240,17 +374,18 @@ def run_grasp(hand: str, grasp_width: int, grasp_effort: float, skip_gripper: bo
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="固定坐标抓取（单文件 ROS 直调）")
+    parser = argparse.ArgumentParser(description="固定坐标抓取")
     parser.add_argument("--hand", choices=("left", "right"), default="right")
     parser.add_argument("--grasp-width", type=int, default=90)
     parser.add_argument("--grasp-effort", type=float, default=1.5)
     parser.add_argument("--skip-gripper", action="store_true")
+    parser.add_argument("--skip-arm-mode", action="store_true",
+                        help="不调用 arm_traj_change_mode（已在外部模式时用）")
     args = parser.parse_args()
 
-    _log(
-        f"目标: pre={PRE_GRASP} grasp={GRASP_POS} hand={args.hand} "
-        f"skip_gripper={args.skip_gripper}"
-    )
+    _log(f"目标 pre={PRE_GRASP} grasp={GRASP_POS} hand={args.hand}")
+
+    _check_ros_packages()
 
     try:
         ok = run_grasp(
@@ -258,6 +393,7 @@ def main() -> int:
             grasp_width=args.grasp_width,
             grasp_effort=args.grasp_effort,
             skip_gripper=args.skip_gripper,
+            skip_arm_mode=args.skip_arm_mode,
         )
         return 0 if ok else 1
     except Exception:
