@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import logging
 import math
@@ -20,9 +21,20 @@ import sys
 from pathlib import Path
 from typing import List, Tuple
 
-# 项目根目录
+# 项目根目录（脚本须在 仓库/scripts/ 下）
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "robot_control" / "src"))
+SRC = ROOT / "robot_control" / "src"
+
+
+def _load_module(relative_path: str, module_name: str):
+    """按文件路径加载模块，避免 control 包 __init__ 的相对导入问题。"""
+    path = SRC / relative_path
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"无法加载模块: {path}")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 logging.basicConfig(
     level=logging.INFO,
@@ -94,9 +106,16 @@ def run_grasp(
     robot_config: Path,
 ) -> bool:
     import rospy
-    from utils.config_manager import ConfigManager
-    from control.arm_controller import ArmController
-    from control.gripper_controller import GripperController
+
+    ConfigManager = _load_module(
+        "utils/config_manager.py", "kuavi_config_manager"
+    ).ConfigManager
+    ArmController = _load_module(
+        "control/arm_controller.py", "kuavi_arm_controller"
+    ).ArmController
+    GripperController = _load_module(
+        "control/gripper_controller.py", "kuavi_gripper_controller"
+    ).GripperController
 
     if not rospy.core.is_initialized():
         rospy.init_node("grasp_from_offline_vision", anonymous=True)
