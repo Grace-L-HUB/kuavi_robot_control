@@ -279,24 +279,33 @@ class ArmController:
             request.joint_angles_as_q0 = False
 
             # 设置左手
-            if left_pos is not None:
-                request.hand_poses.left_pose.pos_xyz = np.array(left_pos)
-                request.hand_poses.left_pose.quat_xyzw = np.array(
-                    left_quat if left_quat else self._default_quat
-                )
-                request.hand_poses.left_pose.elbow_pos_xyz = np.array(
-                    left_elbow if left_elbow else [0.0, 0.0, 0.0]
-                )
+        if left_pos is not None:
+            request.hand_poses.left_pose.pos_xyz = np.array(left_pos)
+            request.hand_poses.left_pose.quat_xyzw = np.array(
+                left_quat if left_quat else self._default_quat
+            )
+            request.hand_poses.left_pose.elbow_pos_xyz = np.array(
+                left_elbow if left_elbow else [0.0, 0.0, 0.0]
+            )
+        else:
+            # IK 要求双手四元数有效；未指定时用默认待机位姿
+            request.hand_poses.left_pose.pos_xyz = np.array([0.45, 0.25, 0.11988012])
+            request.hand_poses.left_pose.quat_xyzw = np.array(self._default_quat)
+            request.hand_poses.left_pose.elbow_pos_xyz = np.zeros(3)
 
-            # 设置右手
-            if right_pos is not None:
-                request.hand_poses.right_pose.pos_xyz = np.array(right_pos)
-                request.hand_poses.right_pose.quat_xyzw = np.array(
-                    right_quat if right_quat else self._default_quat
-                )
-                request.hand_poses.right_pose.elbow_pos_xyz = np.array(
-                    right_elbow if right_elbow else [0.0, 0.0, 0.0]
-                )
+        # 设置右手
+        if right_pos is not None:
+            request.hand_poses.right_pose.pos_xyz = np.array(right_pos)
+            request.hand_poses.right_pose.quat_xyzw = np.array(
+                right_quat if right_quat else self._default_quat
+            )
+            request.hand_poses.right_pose.elbow_pos_xyz = np.array(
+                right_elbow if right_elbow else [0.0, 0.0, 0.0]
+            )
+        else:
+            request.hand_poses.right_pose.pos_xyz = np.array([0.45, -0.25, 0.11988012])
+            request.hand_poses.right_pose.quat_xyzw = np.array(self._default_quat)
+            request.hand_poses.right_pose.elbow_pos_xyz = np.zeros(3)
 
             response = self._ik_service(request)
 

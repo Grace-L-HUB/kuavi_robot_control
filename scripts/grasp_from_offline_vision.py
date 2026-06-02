@@ -36,10 +36,15 @@ RETREAT = (TARGET_X, TARGET_Y, 0.79)
 
 GRASP_QUAT = [0.0, -0.70682518, 0.0, 0.70738827]
 
+# IK 必须同时给双手有效位姿（interface.md 示例）；未设置的一侧四元数为 0 会报错
+INACTIVE_LEFT_POS = [0.45, 0.25, 0.11988012]
+INACTIVE_RIGHT_POS = [0.45, -0.25, 0.11988012]
+
 IK_SERVICE_CANDIDATES = (
     "/ik/two_arm_hand_pose_cmd_srv",
     "two_arm_hand_pose_cmd_srv",
 )
+IK_WAIT_TIMEOUT = 15.0
 
 
 def _log(msg: str) -> None:
@@ -151,7 +156,7 @@ def _resolve_ik_proxy():
     for name in IK_SERVICE_CANDIDATES:
         try:
             _log(f"[IK] 等待服务: {name}")
-            rospy.wait_for_service(name, timeout=5.0)
+            rospy.wait_for_service(name, timeout=IK_WAIT_TIMEOUT)
             proxy = rospy.ServiceProxy(name, twoArmHandPoseCmdSrv)
             _log(f"[IK] 已连接: {name}")
             return proxy
@@ -162,6 +167,10 @@ def _resolve_ik_proxy():
 
 
 def _solve_ik(ik_proxy, pos, quat, hand: str):
+    """
+    双臂 IK：必须同时填写 left_pose 与 right_pose 的有效四元数。
+    仅设置一只手时另一侧默认为 [0,0,0,0] 会导致 IK 节点报错。
+    """
     import numpy as np
     from motion_capture_ik.msg import twoArmHandPoseCmd
 
@@ -169,14 +178,21 @@ def _solve_ik(ik_proxy, pos, quat, hand: str):
     req.use_custom_ik_param = False
     req.joint_angles_as_q0 = False
     zero3 = np.zeros(3)
+
+    left_pos = list(INACTIVE_LEFT_POS)
+    right_pos = list(INACTIVE_RIGHT_POS)
     if hand == "left":
-        req.hand_poses.left_pose.pos_xyz = np.array(pos, dtype=float)
-        req.hand_poses.left_pose.quat_xyzw = quat
-        req.hand_poses.left_pose.elbow_pos_xyz = zero3
+        left_pos = list(pos)
     else:
-        req.hand_poses.right_pose.pos_xyz = np.array(pos, dtype=float)
-        req.hand_poses.right_pose.quat_xyzw = quat
-        req.hand_poses.right_pose.elbow_pos_xyz = zero3
+        right_pos = list(pos)
+
+    req.hand_poses.left_pose.pos_xyz = np.array(left_pos, dtype=float)
+    req.hand_poses.left_pose.quat_xyzw = quat
+    req.hand_poses.left_pose.elbow_pos_xyz = zero3
+
+    req.hand_poses.right_pose.pos_xyz = np.array(right_pos, dtype=float)
+    req.hand_poses.right_pose.quat_xyzw = quat
+    req.hand_poses.right_pose.elbow_pos_xyz = zero3
 
     def _do_ik():
         return ik_proxy(req)
