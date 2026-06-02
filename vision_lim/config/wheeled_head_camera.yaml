@@ -1,10 +1,6 @@
-# 轮臂机器人：头顶 RGB-D 相机向下俯视
-# 坐标约定（与 Kuavo IK / interface.md 示例一致）:
-#   机械臂基座系: X 前, Y 左, Z 上
-#   相机 optical: X 右, Y 下, Z 前 (深度沿 +Z)
+# 轮臂机器人：头顶 RGB-D 向下俯视 -> IK 基座系 (X前 Y左 Z上)
 
 camera_frame: "camera_depth_optical_frame"
-# IK 正解/逆解使用的末端参考系，按 rostopic tf 实际名称修改
 ik_target_frames:
   - "base_link"
   - "torso"
@@ -12,15 +8,36 @@ ik_target_frames:
   - "odom"
   - "base"
 
-# 静态变换（未读到 tf 时使用，请按实机标定微调）
 static_transform:
-  # 相机光轴相对水平面向下俯仰角（度）
   pitch_deg: 48.0
-  # 相机光心在 IK 基座系中的位置 [x前, y左, z上]（米）
   camera_position_in_base: [0.12, 0.0, 0.55]
-  # 图像 x 向右 -> 基座 Y 分量系数（右手抓取侧物体常为负 Y，取 -1）
   lateral_sign: -1.0
 
+# 抓取位姿修正（在静态/ tf 变换之后叠加）
 grasp_offsets:
-  pre_grasp_z: 0.10
+  # 加大前方距离：物体离机器人太近时增大此值
+  forward_extra_m: 0.22
+  depth_forward_scale: 1.05
+  # 右手抓取：基座 Y 左为正，右手侧物体常为负 Y
+  right_y_bias: -0.18
+  left_y_bias: 0.18
   grasp_depth_z: 0.0
+  # 水平接近：预抓取在抓取点后方（-X），再前伸至抓取点
+  pre_grasp_back_m: 0.14
+  pre_grasp_lift_z: 0.05
+  retreat_back_m: 0.12
+  retreat_lift_z: 0.08
+
+# 末端姿态 quat_xyzw（相对 IK 基座）
+# 水平前向抓取：夹爪朝前伸、张开口大致竖直（由掌心朝下绕 Y 轴转 90° 近似）
+end_effector_orientation:
+  palm_down: [0.0, -0.70682518, 0.0, 0.70738827]
+  right:
+    quat_xyzw: [0.5, -0.5, 0.5, 0.5]
+  left:
+    quat_xyzw: [0.5, 0.5, 0.5, -0.5]
+
+# 非抓取侧手臂待机位（IK 需双手有效位姿）
+inactive_arm_pose:
+  left: [0.45, 0.25, 0.11988012]
+  right: [0.45, -0.25, 0.11988012]

@@ -1,8 +1,5 @@
 """
 轮臂机器人头顶下倾相机：相机 optical 坐标 -> 机械臂 IK 基座坐标。
-
-优先使用 ROS tf（与 ros_interface 发布的 /tf 一致）；
-无 tf 时使用静态俯仰模型（见 config/wheeled_head_camera.yaml）。
 """
 
 from __future__ import annotations
@@ -15,7 +12,6 @@ import yaml
 
 DEFAULT_CONFIG = Path(__file__).parent / "config" / "wheeled_head_camera.yaml"
 
-# 来自 grasp_target.json 的相机系三维点（米）
 DEFAULT_CAMERA_POINT = (
     -0.044330238372661326,
     0.08261372036424994,
@@ -40,8 +36,46 @@ def _default_config_dict() -> Dict:
             "camera_position_in_base": [0.12, 0.0, 0.55],
             "lateral_sign": -1.0,
         },
-        "grasp_offsets": {"pre_grasp_z": 0.10, "grasp_depth_z": 0.0},
+        "grasp_offsets": {
+            "forward_extra_m": 0.22,
+            "depth_forward_scale": 1.05,
+            "right_y_bias": -0.18,
+            "left_y_bias": 0.18,
+            "pre_grasp_back_m": 0.14,
+            "pre_grasp_lift_z": 0.05,
+            "retreat_back_m": 0.12,
+            "retreat_lift_z": 0.08,
+            "grasp_depth_z": 0.0,
+        },
+        "end_effector_orientation": {
+            "palm_down": [0.0, -0.70682518, 0.0, 0.70738827],
+            "right": {"quat_xyzw": [0.5, -0.5, 0.5, 0.5]},
+            "left": {"quat_xyzw": [0.5, 0.5, 0.5, -0.5]},
+        },
+        "inactive_arm_pose": {
+            "left": [0.45, 0.25, 0.11988012],
+            "right": [0.45, -0.25, 0.11988012],
+        },
     }
+
+
+def get_grasp_quat(hand: str, config: Optional[Dict] = None) -> List[float]:
+    cfg = config or load_wheeled_camera_config()
+    eo = cfg.get("end_effector_orientation", {})
+    key = "right" if hand == "right" else "left"
+    block = eo.get(key, {})
+    if isinstance(block, dict) and block.get("quat_xyzw"):
+        return list(block["quat_xyzw"])
+    return list(eo.get("palm_down", [0.0, -0.70682518, 0.0, 0.70738827]))
+
+
+def get_inactive_arm_pose(hand: str, config: Optional[Dict] = None) -> List[float]:
+    """返回非抓取侧待机位置。"""
+    cfg = config or load_wheeled_camera_config()
+    poses = cfg.get("inactive_arm_pose", {})
+    if hand == "right":
+        return list(poses.get("left", [0.45, 0.25, 0.11988012]))
+    return list(poses.get("right", [0.45, -0.25, 0.11988012]))
 
 
 def camera_optical_to_base_static(
@@ -50,14 +84,6 @@ def camera_optical_to_base_static(
     camera_position_in_base: Tuple[float, float, float],
     lateral_sign: float = -1.0,
 ) -> Tuple[float, float, float]:
-    """
-    头顶相机向下俯仰的静态近似（无 tf 时）。
-
-    相机 optical: X 右, Y 下, Z 前（深度）。
-    基座: X 前, Y 左, Z 上。
-
-    将深度 Z 分解为前方与下方分量；图像 X 映射为基座横向。
-    """
     x_c, y_c, z_c = point_cam
     cx, cy, cz = camera_position_in_base
     p = math.radians(pitch_deg)
@@ -70,13 +96,33 @@ def camera_optical_to_base_static(
     return (x_b, y_b, z_b)
 
 
+def _apply_grasp_offsets(
+    arm: Tuple[float, float, float],
+    hand: str,
+    off: Dict,
+) -> Tuple[float, float, float]:
+    scale = float(off.get("depth_forward_scale", 1.0))
+    cx, cy, cz = arm[0], arm[1], arm[2]
+    # 仅放大由深度带来的前向分量（相对相机位置的增量）
+    forward_part = cx - float(off.get("_cam_x0", 0.12))
+    gx = float(off.get("_cam_x0", 0.12)) + forward_part * scale
+    gx += float(off.get("forward_extra_m", 0.0))
+
+    if hand == "right":
+        gy = cy + float(off.get("right_y_bias", 0.0))
+    else:
+        gy = cy + float(off.get("left_y_bias", 0.0))
+
+    gz = cz + float(off.get("grasp_depth_z", 0.0))
+    return (gx, gy, gz)
+
+
 def camera_optical_to_base_tf(
     point_cam: Tuple[float, float, float],
     source_frame: str,
     target_frames: List[str],
     timeout_sec: float = 3.0,
 ) -> Tuple[Tuple[float, float, float], str]:
-    """通过 tf2 将点变换到 IK 基座系（与 ros_application /tf 一致）。"""
     import rospy
     import tf2_ros
     from geometry_msgs.msg import PointStamped
@@ -95,29 +141,24 @@ def camera_optical_to_base_tf(
     last_err = None
     for target in target_frames:
         try:
-            out = buffer.transform(
-                pt, target, rospy.Duration(timeout_sec)
-            )
-            return (
-                (out.point.x, out.point.y, out.point.z),
-                target,
-            )
+            out = buffer.transform(pt, target, rospy.Duration(timeout_sec))
+            return ((out.point.x, out.point.y, out.point.z), target)
         except Exception as e:
             last_err = e
-    raise RuntimeError(f"tf 变换失败 {source_frame} -> {target_frames}: {last_err}")
+    raise RuntimeError(f"tf 变换失败: {last_err}")
 
 
 def resolve_grasp_poses_arm_base(
     point_cam: Tuple[float, float, float],
     config: Optional[Dict] = None,
     use_tf: bool = False,
+    hand: str = "right",
 ) -> Dict:
-    """
-    返回 pre_grasp / grasp / retreat（米，IK 基座系）。
-    """
     cfg = config or load_wheeled_camera_config()
     st = cfg.get("static_transform", {})
-    off = cfg.get("grasp_offsets", {})
+    off = dict(cfg.get("grasp_offsets", {}))
+    cam_pos = st.get("camera_position_in_base", [0.12, 0.0, 0.55])
+    off["_cam_x0"] = float(cam_pos[0])
 
     if use_tf:
         import rospy
@@ -131,21 +172,24 @@ def resolve_grasp_poses_arm_base(
         )
         method = f"tf->{frame}"
     else:
-        pos = st.get("camera_position_in_base", [0.12, 0.0, 0.55])
         arm = camera_optical_to_base_static(
             point_cam,
             float(st.get("pitch_deg", 48.0)),
-            (float(pos[0]), float(pos[1]), float(pos[2])),
+            (float(cam_pos[0]), float(cam_pos[1]), float(cam_pos[2])),
             float(st.get("lateral_sign", -1.0)),
         )
         method = "static_pitch"
 
-    pre_z = float(off.get("pre_grasp_z", 0.10))
-    grasp_dz = float(off.get("grasp_depth_z", 0.0))
+    grasp = _apply_grasp_offsets(arm, hand, off)
 
-    grasp = (arm[0], arm[1], arm[2] + grasp_dz)
-    pre = (grasp[0], grasp[1], grasp[2] + pre_z)
-    retreat = pre
+    pre_back = float(off.get("pre_grasp_back_m", 0.14))
+    pre_lift = float(off.get("pre_grasp_lift_z", 0.05))
+    ret_back = float(off.get("retreat_back_m", 0.12))
+    ret_lift = float(off.get("retreat_lift_z", 0.08))
+
+    # 水平抓取：预抓取在后方，沿 +X 前伸到抓取点
+    pre = (grasp[0] - pre_back, grasp[1], grasp[2] + pre_lift)
+    retreat = (grasp[0] - ret_back, grasp[1], grasp[2] + ret_lift)
 
     return {
         "camera_coord_m": list(point_cam),
@@ -154,19 +198,6 @@ def resolve_grasp_poses_arm_base(
         "grasp": list(grasp),
         "retreat": list(retreat),
         "transform_method": method,
+        "grasp_quat_xyzw": get_grasp_quat(hand, cfg),
+        "inactive_arm_pose": get_inactive_arm_pose(hand, cfg),
     }
-
-
-def print_transform_debug(point_cam: Tuple[float, float, float], config_path: Optional[str] = None) -> None:
-    cfg = load_wheeled_camera_config(config_path)
-    static_arm = camera_optical_to_base_static(
-        point_cam,
-        float(cfg["static_transform"]["pitch_deg"]),
-        tuple(cfg["static_transform"]["camera_position_in_base"]),
-        float(cfg["static_transform"].get("lateral_sign", -1.0)),
-    )
-    print("相机 optical (m):", point_cam)
-    print("静态变换 -> 基座 (m):", static_arm)
-    print("  (旧错误: 直接把相机 Z 当高度 -> 会举到头顶)")
-    poses = resolve_grasp_poses_arm_base(point_cam, cfg, use_tf=False)
-    print("抓取规划:", poses)

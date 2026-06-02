@@ -37,6 +37,8 @@ for _repo in (_SCRIPT_DIR.parent, _SCRIPT_DIR.parent.parent):
 try:
     from vision_lim.wheeled_camera_transform import (
         DEFAULT_CAMERA_POINT,
+        get_grasp_quat,
+        get_inactive_arm_pose,
         load_wheeled_camera_config,
         resolve_grasp_poses_arm_base,
     )
@@ -52,37 +54,75 @@ except ImportError:
                 "camera_position_in_base": [0.12, 0.0, 0.55],
                 "lateral_sign": -1.0,
             },
-            "grasp_offsets": {"pre_grasp_z": 0.10, "grasp_depth_z": 0.0},
+            "grasp_offsets": {
+                "forward_extra_m": 0.22,
+                "depth_forward_scale": 1.05,
+                "right_y_bias": -0.18,
+                "pre_grasp_back_m": 0.14,
+                "pre_grasp_lift_z": 0.05,
+                "retreat_back_m": 0.12,
+                "retreat_lift_z": 0.08,
+            },
+            "end_effector_orientation": {
+                "palm_down": [0.0, -0.70682518, 0.0, 0.70738827],
+                "right": {"quat_xyzw": [0.5, -0.5, 0.5, 0.5]},
+            },
+            "inactive_arm_pose": {
+                "left": [0.45, 0.25, 0.11988012],
+                "right": [0.45, -0.25, 0.11988012],
+            },
         }
 
-    def resolve_grasp_poses_arm_base(point_cam, config=None, use_tf=False):
+    def get_grasp_quat(hand, config=None):
+        eo = (config or load_wheeled_camera_config()).get("end_effector_orientation", {})
+        return list(eo.get("right", {}).get("quat_xyzw", [0.5, -0.5, 0.5, 0.5]))
+
+    def get_inactive_arm_pose(hand, config=None):
+        p = (config or load_wheeled_camera_config()).get("inactive_arm_pose", {})
+        return list(p.get("left", [0.45, 0.25, 0.12])) if hand == "right" else list(
+            p.get("right", [0.45, -0.25, 0.12])
+        )
+
+    def resolve_grasp_poses_arm_base(point_cam, config=None, use_tf=False, hand="right"):
         st = (config or load_wheeled_camera_config())["static_transform"]
+        off = (config or load_wheeled_camera_config()).get("grasp_offsets", {})
         p = math.radians(float(st["pitch_deg"]))
         c, s = math.cos(p), math.sin(p)
         x_c, y_c, z_c = point_cam
         cx, cy, cz = st["camera_position_in_base"]
         lat = float(st.get("lateral_sign", -1.0))
-        arm = (cx + z_c * c + y_c * s, cy + lat * x_c, cz - z_c * s + y_c * c * 0.35)
-        pre_z = 0.10
-        grasp = arm
-        pre = (grasp[0], grasp[1], grasp[2] + pre_z)
+        x_b = cx + z_c * c + y_c * s
+        x_b += float(off.get("forward_extra_m", 0.22))
+        y_b = cy + lat * x_c + float(off.get("right_y_bias", -0.18))
+        z_b = cz - z_c * s + y_c * c * 0.35
+        grasp = (x_b, y_b, z_b)
+        pre = (
+            grasp[0] - float(off.get("pre_grasp_back_m", 0.14)),
+            grasp[1],
+            grasp[2] + float(off.get("pre_grasp_lift_z", 0.05)),
+        )
+        retreat = (
+            grasp[0] - float(off.get("retreat_back_m", 0.12)),
+            grasp[1],
+            grasp[2] + float(off.get("retreat_lift_z", 0.08)),
+        )
         return {
             "camera_coord_m": list(point_cam),
             "arm_coord_m": list(grasp),
             "pre_grasp": list(pre),
             "grasp": list(grasp),
-            "retreat": list(pre),
+            "retreat": list(retreat),
             "transform_method": "static_pitch_embedded",
+            "grasp_quat_xyzw": get_grasp_quat(hand),
+            "inactive_arm_pose": get_inactive_arm_pose(hand),
         }
 
-# 运行时由相机系坐标换算，勿再把相机 Z 直接当机械臂高度
+# 运行时由相机系坐标换算
 PRE_GRASP: tuple = (0.0, 0.0, 0.0)
 GRASP_POS: tuple = (0.0, 0.0, 0.0)
 RETREAT: tuple = (0.0, 0.0, 0.0)
-
-GRASP_QUAT = [0.0, -0.70682518, 0.0, 0.70738827]
-
-# IK 必须同时给双手有效位姿（interface.md 示例）；未设置的一侧四元数为 0 会报错
+ACTIVE_GRASP_QUAT = [0.5, -0.5, 0.5, 0.5]
+PALM_DOWN_QUAT = [0.0, -0.70682518, 0.0, 0.70738827]
 INACTIVE_LEFT_POS = [0.45, 0.25, 0.11988012]
 INACTIVE_RIGHT_POS = [0.45, -0.25, 0.11988012]
 
@@ -212,10 +252,9 @@ def _resolve_ik_proxy():
     raise RuntimeError(f"未找到 IK 服务: {last_err}")
 
 
-def _solve_ik(ik_proxy, pos, quat, hand: str):
+def _solve_ik(ik_proxy, pos, hand: str):
     """
-    双臂 IK：必须同时填写 left_pose 与 right_pose 的有效四元数。
-    仅设置一只手时另一侧默认为 [0,0,0,0] 会导致 IK 节点报错。
+    双臂 IK：抓取侧用水平姿态，另一侧用掌心朝下待机位姿。
     """
     import numpy as np
     from motion_capture_ik.msg import twoArmHandPoseCmd
@@ -225,19 +264,26 @@ def _solve_ik(ik_proxy, pos, quat, hand: str):
     req.joint_angles_as_q0 = False
     zero3 = np.zeros(3)
 
+    grasp_q = np.array(ACTIVE_GRASP_QUAT, dtype=float)
+    down_q = np.array(PALM_DOWN_QUAT, dtype=float)
+
     left_pos = list(INACTIVE_LEFT_POS)
     right_pos = list(INACTIVE_RIGHT_POS)
     if hand == "left":
         left_pos = list(pos)
+        left_q = grasp_q
+        right_q = down_q
     else:
         right_pos = list(pos)
+        right_q = grasp_q
+        left_q = down_q
 
     req.hand_poses.left_pose.pos_xyz = np.array(left_pos, dtype=float)
-    req.hand_poses.left_pose.quat_xyzw = quat
+    req.hand_poses.left_pose.quat_xyzw = left_q
     req.hand_poses.left_pose.elbow_pos_xyz = zero3
 
     req.hand_poses.right_pose.pos_xyz = np.array(right_pos, dtype=float)
-    req.hand_poses.right_pose.quat_xyzw = quat
+    req.hand_poses.right_pose.quat_xyzw = right_q
     req.hand_poses.right_pose.elbow_pos_xyz = zero3
 
     def _do_ik():
@@ -330,7 +376,7 @@ def _publish_arm_traj(q_rad, duration: float) -> None:
 def _move_to(ik_proxy, arm_pub, pos, hand: str, duration: float, label: str,
              use_target_poses: bool) -> bool:
     _log(f"[运动] {label} -> ({pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f})")
-    q = _solve_ik(ik_proxy, pos, GRASP_QUAT, hand)
+    q = _solve_ik(ik_proxy, pos, hand)
     if q is None:
         return False
     if use_target_poses and arm_pub is not None:
@@ -381,24 +427,35 @@ def _apply_grasp_coordinates(
     camera_point: tuple,
     config_path: str,
     use_tf: bool,
+    hand: str,
 ) -> None:
     global PRE_GRASP, GRASP_POS, RETREAT
+    global ACTIVE_GRASP_QUAT, INACTIVE_LEFT_POS, INACTIVE_RIGHT_POS
 
     cfg = load_wheeled_camera_config(config_path if config_path else None)
-    poses = resolve_grasp_poses_arm_base(camera_point, cfg, use_tf=use_tf)
+    poses = resolve_grasp_poses_arm_base(
+        camera_point, cfg, use_tf=use_tf, hand=hand
+    )
 
     PRE_GRASP = tuple(poses["pre_grasp"])
     GRASP_POS = tuple(poses["grasp"])
     RETREAT = tuple(poses["retreat"])
+    ACTIVE_GRASP_QUAT = list(poses["grasp_quat_xyzw"])
+
+    inact = poses["inactive_arm_pose"]
+    if hand == "right":
+        INACTIVE_LEFT_POS = list(inact)
+    else:
+        INACTIVE_RIGHT_POS = list(inact)
 
     _log(f"[坐标] 相机 optical (m): {camera_point}")
-    _log(f"[坐标] 变换方式: {poses['transform_method']}")
-    _log(f"[坐标] IK 基座 抓取点 (m): {GRASP_POS}")
-    _log(f"[坐标] IK 基座 预抓取 (m): {PRE_GRASP}")
-    _log(
-        "[坐标] 说明: 头顶俯视相机 — 深度沿光轴 Z，不能直接把 Z 当机械臂高度；"
-        "若仍偏差请调 vision_lim/config/wheeled_head_camera.yaml"
-    )
+    _log(f"[坐标] 变换: {poses['transform_method']}")
+    _log(f"[坐标] 水平抓取点 (m): {GRASP_POS}")
+    _log(f"[坐标] 预抓取(后方就位, -X): {PRE_GRASP}")
+    _log(f"[坐标] 后撤 (m): {RETREAT}")
+    _log(f"[姿态] 抓取侧水平 quat_xyzw: {ACTIVE_GRASP_QUAT}")
+    _log("[坐标] 微调: vision_lim/config/wheeled_head_camera.yaml "
+         "(forward_extra_m / right_y_bias / quat)")
 
 
 def run_grasp(hand: str, grasp_width: int, grasp_effort: float,
@@ -409,7 +466,7 @@ def run_grasp(hand: str, grasp_width: int, grasp_effort: float,
     rospy.init_node("grasp_from_offline_vision", anonymous=True)
     _log("[0] ROS 节点已启动")
 
-    _apply_grasp_coordinates(camera_point, config_path, use_tf)
+    _apply_grasp_coordinates(camera_point, config_path, use_tf, hand)
 
     if not skip_arm_mode:
         if not _set_arm_mode_external():
@@ -450,9 +507,9 @@ def run_grasp(hand: str, grasp_width: int, grasp_effort: float,
     else:
         _log("[夹爪] --skip-gripper")
 
-    if not _move_to(ik_proxy, arm_pub, PRE_GRASP, hand, 2.0, "预抓取", use_target_poses):
+    if not _move_to(ik_proxy, arm_pub, PRE_GRASP, hand, 2.0, "后方就位", use_target_poses):
         return False
-    if not _move_to(ik_proxy, arm_pub, GRASP_POS, hand, 3.0, "下降", use_target_poses):
+    if not _move_to(ik_proxy, arm_pub, GRASP_POS, hand, 3.0, "前伸水平抓取", use_target_poses):
         return False
 
     if not skip_gripper:
@@ -463,7 +520,7 @@ def run_grasp(hand: str, grasp_width: int, grasp_effort: float,
             _log(f"[夹爪] 闭合失败: {e}")
             return False
 
-    if not _move_to(ik_proxy, arm_pub, RETREAT, hand, 2.0, "抬起", use_target_poses):
+    if not _move_to(ik_proxy, arm_pub, RETREAT, hand, 2.0, "后撤抬起", use_target_poses):
         return False
 
     _log("[完成] 抓取流程结束")
@@ -523,7 +580,9 @@ def main() -> int:
             _check_ros_packages()
             import rospy
             rospy.init_node("grasp_coord_preview", anonymous=True)
-        _apply_grasp_coordinates(camera_point, cfg_path or "", args.use_tf)
+        _apply_grasp_coordinates(
+            camera_point, cfg_path or "", args.use_tf, args.hand
+        )
         return 0
 
     _check_ros_packages()
