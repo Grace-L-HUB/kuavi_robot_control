@@ -1,19 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-固定坐标抓取（单文件，对齐 Kuavo 开源 SDK / interface.md）。
+固定坐标抓取（单文件，可单独拷到 kuavo-ros-opensource/scripts/ 运行）。
 
-【重要】必须先 source Kuavo 工作空间，否则 No module named 'kuavo_sdk'：
+【必做】source ROS + Kuavo 工作空间:
   source /opt/ros/noetic/setup.bash
-  source /home/lab/kuavo-ros-control/devel/setup.bash   # 按实际路径修改
-  python3 scripts/grasp_from_offline_vision.py --hand right
+  source /home/lab/kuavo-ros-opensource/devel/setup.bash
 
-脚本放在 opensource/scripts 时:
-  cd /path/to/opensource/scripts
-  bash run_grasp.sh --hand right
+【运行】
+  cd /path/to/kuavo-ros-opensource/scripts
+  python3 grasp_from_offline_vision.py --dry-coords --hand left
+  python3 grasp_from_offline_vision.py --hand left
 
-或一键（在 Kuavi_bot_control 仓库内）:
-  bash scripts/run_grasp.sh --hand right
+【调参】只改下方 ===== 用户参数区 =====，保存后重跑 --dry-coords 预览坐标。
 """
 
 from __future__ import annotations
@@ -26,132 +25,195 @@ import os
 import sys
 import traceback
 from pathlib import Path
+from typing import Dict, List, Optional, Tuple
 
-# 允许从 Kuavi_bot_control 或 opensource 旁路导入 vision_lim
 _SCRIPT_DIR = Path(__file__).resolve().parent
-for _repo in (_SCRIPT_DIR.parent, _SCRIPT_DIR.parent.parent):
-    _vl = _repo / "vision_lim"
-    if _vl.is_dir() and str(_repo) not in sys.path:
-        sys.path.insert(0, str(_repo))
 
-try:
-    from vision_lim.wheeled_camera_transform import (
-        DEFAULT_CAMERA_POINT,
-        get_grasp_quat,
-        get_inactive_arm_pose,
-        load_wheeled_camera_config,
-        resolve_grasp_poses_arm_base,
-    )
-except ImportError:
-    DEFAULT_CAMERA_POINT = (-0.013972711859484142, 0.0325017152875609, 0.772)
+# =============================================================================
+# 用户参数区 — 单独部署时只改这里
+# =============================================================================
 
-    def load_wheeled_camera_config(path=None):
-        return {
-            "camera_frame": "camera_depth_optical_frame",
-            "ik_target_frames": ["base_link", "torso", "pelvis"],
-            "static_transform": {
-                "pitch_deg": 51.0,
-                "camera_position_in_base": [0.10, 0.0, 0.58],
-                "lateral_sign": -1.0,
-                "forward_depth_scale": 1.0,
-                "height_from_depth_scale": 0.95,
-            },
-            "grasp_offsets": {
-                "forward_extra_m": 0.02,
-                "depth_forward_scale": 1.0,
-                "center_y_bias": 0.0,
-                "grasp_z_bias": 0.0,
-                "temp_x": -0.05,
-                "temp_y": 0.05,
-                "offset_z": -0.12,
-                "grasp_depth_z": 0.0,
-                "pre_grasp_back_m": 0.10,
-                "pre_grasp_lift_z": 0.03,
-                "retreat_back_m": 0.08,
-                "retreat_lift_z": 0.05,
-            },
-            "end_effector_orientation": {
-                "palm_down": [0.0, -0.70682518, 0.0, 0.70738827],
-                "right": {"quat_xyzw": [-0.5002, -0.4998, -0.4998, 0.5002]},
-                "left": {"quat_xyzw": [0.5002, -0.4998, -0.4998, 0.5002]},
-            },
-            "inactive_arm_pose": {
-                "left": [0.45, 0.25, 0.11988012],
-                "right": [0.45, -0.25, 0.11988012],
-            },
-        }
+# 相机 optical 坐标 (m)，无 grasp_target.json 时使用
+# 来自 instance 离线视觉：pixel + depth 反投影
+CAMERA_POINT_M = (-0.014, 0.033, 0.772)
 
-    def get_grasp_quat(hand, config=None):
-        eo = (config or load_wheeled_camera_config()).get("end_effector_orientation", {})
-        key = "left" if hand == "left" else "right"
-        block = eo.get(key, {})
-        if isinstance(block, dict) and block.get("quat_xyzw"):
-            return list(block["quat_xyzw"])
-        return list(eo.get("palm_down", [0.0, -0.70682518, 0.0, 0.70738827]))
+# 相机 -> base_link 静态变换（轮臂头顶俯视）
+PITCH_DEG = 51.0
+CAMERA_POSITION_IN_BASE = (0.10, 0.0, 0.58)
+LATERAL_SIGN = -1.0
+FORWARD_DEPTH_SCALE = 1.0
+HEIGHT_FROM_DEPTH_SCALE = 0.95
 
-    def get_inactive_arm_pose(hand, config=None):
-        p = (config or load_wheeled_camera_config()).get("inactive_arm_pose", {})
-        return list(p.get("left", [0.45, 0.25, 0.12])) if hand == "right" else list(
-            p.get("right", [0.45, -0.25, 0.12])
-        )
+# 官方抓取偏置：同一视觉中心，temp_y 左加右减，offset_z 负=抓偏下物体
+FORWARD_EXTRA_M = 0.02
+DEPTH_FORWARD_SCALE = 1.0
+CENTER_Y_BIAS = 0.0
+GRASP_Z_BIAS = 0.0
+TEMP_X = -0.05
+TEMP_Y = 0.05
+OFFSET_Z = -0.12
 
-    def resolve_grasp_poses_arm_base(point_cam, config=None, use_tf=False, hand="right"):
-        cfg = config or load_wheeled_camera_config()
-        st = cfg["static_transform"]
-        off = cfg.get("grasp_offsets", {})
-        p = math.radians(float(st["pitch_deg"]))
-        c, s = math.cos(p), math.sin(p)
-        x_c, y_c, z_c = point_cam
-        cx, cy, cz = st["camera_position_in_base"]
-        lat = float(st.get("lateral_sign", -1.0))
-        x_b = cx + z_c * c + y_c * s + float(off.get("forward_extra_m", 0.02))
-        y_b = cy + lat * x_c + float(off.get("center_y_bias", 0.0))
-        z_b = cz - z_c * s + y_c * c * 0.15 + float(off.get("grasp_z_bias", 0.0))
-        base = (x_b, y_b, z_b)
-        tx = float(off.get("temp_x", -0.05))
-        ty = float(off.get("temp_y", 0.05))
-        tz = float(off.get("offset_z", -0.12))
-        if hand == "left":
-            grasp = (base[0] + tx, base[1] + ty, base[2] + tz)
-        else:
-            grasp = (base[0] + tx, base[1] - ty, base[2] + tz)
-        pre_lift = float(off.get("pre_grasp_lift_z", 0.03))
-        ret_lift = float(off.get("retreat_lift_z", 0.05))
-        pre = (
-            grasp[0] - float(off.get("pre_grasp_back_m", 0.14)),
-            grasp[1],
-            grasp[2] + pre_lift,
-        )
-        retreat = (
-            grasp[0] - float(off.get("retreat_back_m", 0.12)),
-            grasp[1],
-            grasp[2] + ret_lift,
-        )
-        return {
-            "camera_coord_m": list(point_cam),
-            "arm_coord_m": list(grasp),
-            "pre_grasp": list(pre),
-            "grasp": list(grasp),
-            "retreat": list(retreat),
-            "transform_method": "static_pitch_embedded",
-            "grasp_quat_xyzw": get_grasp_quat(hand),
-            "inactive_arm_pose": get_inactive_arm_pose(hand),
-        }
+# 预抓取 / 后撤（沿 base X：预抓取在抓取点后方 -X）
+PRE_GRASP_BACK_M = 0.10
+PRE_GRASP_LIFT_Z = 0.03
+RETREAT_BACK_M = 0.08
+RETREAT_LIFT_Z = 0.05
 
-# 运行时由相机系坐标换算
-PRE_GRASP: tuple = (0.0, 0.0, 0.0)
-GRASP_POS: tuple = (0.0, 0.0, 0.0)
-RETREAT: tuple = (0.0, 0.0, 0.0)
-ACTIVE_GRASP_QUAT = [-0.5002, -0.4998, -0.4998, 0.5002]
+# 姿态 quat_xyzw（相对 IK 基座）
 PALM_DOWN_QUAT = [0.0, -0.70682518, 0.0, 0.70738827]
+GRASP_QUAT_RIGHT = [-0.5002, -0.4998, -0.4998, 0.5002]
+GRASP_QUAT_LEFT = [0.5002, -0.4998, -0.4998, 0.5002]
+
+# 非抓取侧待机位（interface.md 官方示例）
 INACTIVE_LEFT_POS = [0.45, 0.25, 0.11988012]
 INACTIVE_RIGHT_POS = [0.45, -0.25, 0.11988012]
 
+# 夹爪 / IK
+GRASP_WIDTH = 90
+GRASP_EFFORT = 1.5
+GRASP_CLAW_VELOCITY = 50
+IK_WAIT_TIMEOUT = 15.0
 IK_SERVICE_CANDIDATES = (
     "/ik/two_arm_hand_pose_cmd_srv",
     "two_arm_hand_pose_cmd_srv",
 )
-IK_WAIT_TIMEOUT = 15.0
+
+# 默认同目录 grasp_target.json（可选，覆盖 CAMERA_POINT_M）
+DEFAULT_GRASP_JSON = _SCRIPT_DIR / "grasp_target.json"
+
+# =============================================================================
+# 运行时变量（由坐标解算填充）
+# =============================================================================
+
+PRE_GRASP: Tuple[float, float, float] = (0.0, 0.0, 0.0)
+GRASP_POS: Tuple[float, float, float] = (0.0, 0.0, 0.0)
+RETREAT: Tuple[float, float, float] = (0.0, 0.0, 0.0)
+ACTIVE_GRASP_QUAT = list(GRASP_QUAT_RIGHT)
+
+
+def _build_config_dict() -> Dict:
+    return {
+        "static_transform": {
+            "pitch_deg": PITCH_DEG,
+            "camera_position_in_base": list(CAMERA_POSITION_IN_BASE),
+            "lateral_sign": LATERAL_SIGN,
+            "forward_depth_scale": FORWARD_DEPTH_SCALE,
+            "height_from_depth_scale": HEIGHT_FROM_DEPTH_SCALE,
+        },
+        "grasp_offsets": {
+            "forward_extra_m": FORWARD_EXTRA_M,
+            "depth_forward_scale": DEPTH_FORWARD_SCALE,
+            "center_y_bias": CENTER_Y_BIAS,
+            "grasp_z_bias": GRASP_Z_BIAS,
+            "temp_x": TEMP_X,
+            "temp_y": TEMP_Y,
+            "offset_z": OFFSET_Z,
+            "pre_grasp_back_m": PRE_GRASP_BACK_M,
+            "pre_grasp_lift_z": PRE_GRASP_LIFT_Z,
+            "retreat_back_m": RETREAT_BACK_M,
+            "retreat_lift_z": RETREAT_LIFT_Z,
+        },
+        "end_effector_orientation": {
+            "palm_down": list(PALM_DOWN_QUAT),
+            "right": {"quat_xyzw": list(GRASP_QUAT_RIGHT)},
+            "left": {"quat_xyzw": list(GRASP_QUAT_LEFT)},
+        },
+        "inactive_arm_pose": {
+            "left": list(INACTIVE_LEFT_POS),
+            "right": list(INACTIVE_RIGHT_POS),
+        },
+    }
+
+
+def get_grasp_quat(hand: str, config: Optional[Dict] = None) -> List[float]:
+    eo = (config or _build_config_dict())["end_effector_orientation"]
+    key = "left" if hand == "left" else "right"
+    return list(eo[key]["quat_xyzw"])
+
+
+def get_inactive_arm_pose(hand: str, config: Optional[Dict] = None) -> List[float]:
+    poses = (config or _build_config_dict())["inactive_arm_pose"]
+    if hand == "right":
+        return list(poses["left"])
+    return list(poses["right"])
+
+
+def _camera_optical_to_base_static(
+    point_cam: Tuple[float, float, float],
+    st: Dict,
+) -> Tuple[float, float, float]:
+    x_c, y_c, z_c = point_cam
+    cx, cy, cz = st["camera_position_in_base"]
+    p = math.radians(float(st["pitch_deg"]))
+    c, s = math.cos(p), math.sin(p)
+    fwd = float(st.get("forward_depth_scale", 1.0))
+    h_scale = float(st.get("height_from_depth_scale", 1.0))
+    x_b = cx + z_c * c * fwd + y_c * s * 0.5
+    y_b = cy + float(st.get("lateral_sign", -1.0)) * x_c
+    z_b = cz - z_c * s * h_scale + y_c * c * 0.15
+    return (x_b, y_b, z_b)
+
+
+def _vision_base_target(
+    arm: Tuple[float, float, float],
+    off: Dict,
+    cam_x0: float,
+) -> Tuple[float, float, float]:
+    scale = float(off.get("depth_forward_scale", 1.0))
+    cx, cy, cz = arm
+    forward_part = cx - cam_x0
+    gx = cam_x0 + forward_part * scale + float(off.get("forward_extra_m", 0.0))
+    gy = cy + float(off.get("center_y_bias", 0.0))
+    gz = cz + float(off.get("grasp_z_bias", 0.0))
+    return (gx, gy, gz)
+
+
+def _official_hand_grasp_pose(
+    base: Tuple[float, float, float],
+    hand: str,
+    off: Dict,
+) -> Tuple[float, float, float]:
+    x, y, z = base
+    tx = float(off.get("temp_x", -0.05))
+    ty = float(off.get("temp_y", 0.05))
+    tz = float(off.get("offset_z", -0.12))
+    if hand == "left":
+        return (x + tx, y + ty, z + tz)
+    return (x + tx, y - ty, z + tz)
+
+
+def resolve_grasp_poses_arm_base(
+    point_cam: Tuple[float, float, float],
+    hand: str = "right",
+) -> Dict:
+    cfg = _build_config_dict()
+    st = cfg["static_transform"]
+    off = cfg["grasp_offsets"]
+    cam_x0 = float(st["camera_position_in_base"][0])
+
+    arm = _camera_optical_to_base_static(point_cam, st)
+    base = _vision_base_target(arm, off, cam_x0)
+    grasp = _official_hand_grasp_pose(base, hand, off)
+
+    pre_back = float(off["pre_grasp_back_m"])
+    pre_lift = float(off["pre_grasp_lift_z"])
+    ret_back = float(off["retreat_back_m"])
+    ret_lift = float(off["retreat_lift_z"])
+
+    pre = (grasp[0] - pre_back, grasp[1], grasp[2] + pre_lift)
+    retreat = (grasp[0] - ret_back, grasp[1], grasp[2] + ret_lift)
+
+    return {
+        "camera_coord_m": list(point_cam),
+        "base_target_m": list(base),
+        "arm_coord_m": list(grasp),
+        "pre_grasp": list(pre),
+        "grasp": list(grasp),
+        "retreat": list(retreat),
+        "transform_method": "embedded_static_pitch",
+        "grasp_quat_xyzw": get_grasp_quat(hand),
+        "inactive_arm_pose": get_inactive_arm_pose(hand),
+    }
 
 
 def _log(msg: str) -> None:
@@ -159,35 +221,29 @@ def _log(msg: str) -> None:
 
 
 def _bootstrap_kuavo_python_path() -> None:
-    """把 catkin devel 下的 dist-packages 加入 sys.path（未 source 时的补救）。"""
     candidates = []
-
     if os.environ.get("PYTHONPATH"):
         candidates.extend(p for p in os.environ["PYTHONPATH"].split(":") if p)
-
     home = os.path.expanduser("~")
     for base in ("/home/lab", home, "/opt"):
-        if not os.path.isdir(base):
-            continue
-        pattern = os.path.join(base, "*", "devel", "lib", "python3", "dist-packages")
-        candidates.extend(glob.glob(pattern))
-
+        if os.path.isdir(base):
+            candidates.extend(glob.glob(
+                os.path.join(base, "*", "devel", "lib", "python3", "dist-packages")
+            ))
     for fixed in (
+        "/home/lab/kuavo-ros-opensource/devel/lib/python3/dist-packages",
         "/home/lab/kuavo-ros-control/devel/lib/python3/dist-packages",
-        os.path.join(home, "kuavo-ros-control/devel/lib/python3/dist-packages"),
+        os.path.join(home, "kuavo-ros-opensource/devel/lib/python3/dist-packages"),
     ):
         candidates.append(fixed)
 
-    seen = set()
     added = []
+    seen = set()
     for p in candidates:
-        if not p or p in seen or not os.path.isdir(p):
-            continue
-        seen.add(p)
-        if p not in sys.path:
+        if p and p not in seen and os.path.isdir(p) and p not in sys.path:
+            seen.add(p)
             sys.path.insert(0, p)
             added.append(p)
-
     if added:
         _log("[环境] 已添加 Python 路径:")
         for p in added:
@@ -195,7 +251,6 @@ def _bootstrap_kuavo_python_path() -> None:
 
 
 def _check_ros_packages() -> None:
-    """确认 kuavo_sdk / motion_capture_ik 可导入。"""
     _bootstrap_kuavo_python_path()
     missing = []
     for mod in ("kuavo_sdk", "motion_capture_ik"):
@@ -204,24 +259,11 @@ def _check_ros_packages() -> None:
             _log(f"[环境] {mod} OK")
         except ImportError:
             missing.append(mod)
-
-    if not missing:
-        return
-
-    _log("")
-    _log("[错误] 缺少 Python 包: " + ", ".join(missing))
-    _log("请先 source Kuavo catkin 工作空间，再运行本脚本。示例：")
-    _log("  source /opt/ros/noetic/setup.bash")
-    _log("  source /home/lab/kuavo-ros-control/devel/setup.bash")
-    _log("  python3 scripts/grasp_from_offline_vision.py --hand right")
-    _log("")
-    _log("或（推荐）:")
-    _log("  bash scripts/run_grasp.sh --hand right")
-    _log("")
-    _log("若工作空间不在默认路径，可指定：")
-    _log("  export KUAVO_WS_SETUP=/你的路径/kuavo-ros-control/devel/setup.bash")
-    _log("  bash scripts/run_grasp.sh --hand right")
-    raise SystemExit(1)
+    if missing:
+        _log("[错误] 缺少: " + ", ".join(missing))
+        _log("请先: source /opt/ros/noetic/setup.bash")
+        _log("      source .../kuavo-ros-opensource/devel/setup.bash")
+        raise SystemExit(1)
 
 
 def _rad_to_deg_14(q_rad) -> list:
@@ -229,7 +271,6 @@ def _rad_to_deg_14(q_rad) -> list:
 
 
 def _call_with_retry(fn, label: str, retries: int = 3, pause: float = 1.0):
-    """ROS 服务偶发 TransportTerminated 时重试。"""
     import rospy
 
     last_err = None
@@ -274,10 +315,6 @@ def _resolve_ik_proxy():
 
 
 def _solve_ik(ik_proxy, pos, hand: str):
-    """
-    双臂 IK：抓取侧仅改 pos_xyz + 水平 quat；非抓取侧用待机 pos + 掌心朝下。
-    关节整体角度由位置目标决定，水平夹爪四元数不参与待机侧。
-    """
     import numpy as np
     from motion_capture_ik.msg import twoArmHandPoseCmd
 
@@ -303,31 +340,24 @@ def _solve_ik(ik_proxy, pos, hand: str):
     req.hand_poses.left_pose.pos_xyz = np.array(left_pos, dtype=float)
     req.hand_poses.left_pose.quat_xyzw = left_q
     req.hand_poses.left_pose.elbow_pos_xyz = zero3
-
     req.hand_poses.right_pose.pos_xyz = np.array(right_pos, dtype=float)
     req.hand_poses.right_pose.quat_xyzw = right_q
     req.hand_poses.right_pose.elbow_pos_xyz = zero3
 
-    def _do_ik():
-        return ik_proxy(req)
-
     try:
-        resp = _call_with_retry(_do_ik, "IK", retries=2, pause=1.5)
+        resp = _call_with_retry(lambda: ik_proxy(req), "IK", retries=2, pause=1.5)
     except Exception as e:
         _log(f"[IK] 服务通信失败 pos={pos}: {e}")
-        _log("[IK] 请查看 IK 节点日志: rosnode list | grep ik")
         return None
 
     if not resp.success:
-        _log(f"[IK] 求解失败 pos={pos}（目标可能超出工作空间）")
+        _log(f"[IK] 求解失败 pos={pos}")
         return None
-    q = list(resp.q_arm)
-    _log(f"[IK] 成功 joints={len(q)} time_cost={getattr(resp, 'time_cost', '?')}ms")
-    return q
+    _log(f"[IK] 成功 time_cost={getattr(resp, 'time_cost', '?')}ms")
+    return list(resp.q_arm)
 
 
 def _set_arm_mode_external() -> bool:
-    """切换外部控制；失败不抛异常，由调用方决定是否继续。"""
     import subprocess
     import rospy
     from kuavo_sdk.srv import changeArmCtrlMode, changeArmCtrlModeRequest
@@ -344,25 +374,19 @@ def _set_arm_mode_external() -> bool:
     try:
         res = _call_with_retry(_do_call, "arm_traj_change_mode", retries=2)
         if not res.result:
-            _log(f"[手臂] mode 服务返回失败: {res.message}")
+            _log(f"[手臂] mode 失败: {res.message}")
             return False
         _log("[手臂] 外部控制 mode=2 OK")
         return True
     except Exception as e:
-        _log(f"[手臂] Python 服务调用失败: {e}")
-        _log("[手臂] 尝试 rosservice call 备用 ...")
+        _log(f"[手臂] mode 失败: {e}")
         try:
             subprocess.run(
                 ["rosservice", "call", "/arm_traj_change_mode", "control_mode: 2"],
-                check=True,
-                timeout=15,
-                capture_output=True,
-                text=True,
+                check=True, timeout=15, capture_output=True, text=True,
             )
-            _log("[手臂] rosservice 切换 mode=2 OK")
             return True
-        except Exception as e2:
-            _log(f"[手臂] rosservice 也失败: {e2}")
+        except Exception:
             return False
 
 
@@ -374,7 +398,6 @@ def _publish_arm_timed(pub, q_rad, duration: float) -> None:
     msg.times = [float(duration)]
     msg.values = _rad_to_deg_14(q_rad)
     pub.publish(msg)
-    _log(f"[手臂] kuavo_arm_target_poses {duration}s, deg[:3]={msg.values[:3]}")
     rospy.sleep(duration + 0.5)
 
 
@@ -391,7 +414,6 @@ def _publish_arm_traj(q_rad, duration: float) -> None:
     for _ in range(3):
         pub.publish(msg)
         rospy.sleep(0.1)
-    _log(f"[手臂] /kuavo_arm_traj 已发布, 等待 {duration}s")
     rospy.sleep(duration)
 
 
@@ -408,7 +430,8 @@ def _move_to(ik_proxy, arm_pub, pos, hand: str, duration: float, label: str,
     return True
 
 
-def _claw_cmd(hand: str, position: int, velocity: int = 50, effort: float = 1.5) -> bool:
+def _claw_cmd(hand: str, position: int, velocity: int = GRASP_CLAW_VELOCITY,
+              effort: float = GRASP_EFFORT) -> bool:
     import rospy
     from kuavo_sdk.srv import controlLejuClaw, controlLejuClawRequest
 
@@ -427,11 +450,9 @@ def _claw_cmd(hand: str, position: int, velocity: int = 50, effort: float = 1.5)
     try:
         res = _call_with_retry(_do_claw, "夹爪", retries=2)
     except Exception as e:
-        _log(f"[夹爪] 通信失败: {e}")
+        _log(f"[夹爪] 失败: {e}")
         return False
-
     if not res.success:
-        _log(f"[夹爪] 失败: {getattr(res, 'message', res)}")
         return False
     _log(f"[夹爪] {claw} pos={position}")
     return True
@@ -445,20 +466,11 @@ def _load_camera_point_from_json(path: Path) -> tuple:
     raise ValueError(f"{path} 缺少 camera_coord_m")
 
 
-def _apply_grasp_coordinates(
-    camera_point: tuple,
-    config_path: str,
-    use_tf: bool,
-    hand: str,
-) -> None:
+def _apply_grasp_coordinates(camera_point: tuple, hand: str) -> None:
     global PRE_GRASP, GRASP_POS, RETREAT
     global ACTIVE_GRASP_QUAT, INACTIVE_LEFT_POS, INACTIVE_RIGHT_POS
 
-    cfg = load_wheeled_camera_config(config_path if config_path else None)
-    poses = resolve_grasp_poses_arm_base(
-        camera_point, cfg, use_tf=use_tf, hand=hand
-    )
-
+    poses = resolve_grasp_poses_arm_base(camera_point, hand=hand)
     PRE_GRASP = tuple(poses["pre_grasp"])
     GRASP_POS = tuple(poses["grasp"])
     RETREAT = tuple(poses["retreat"])
@@ -470,79 +482,56 @@ def _apply_grasp_coordinates(
     else:
         INACTIVE_RIGHT_POS = list(inact)
 
-    _log(f"[坐标] 视觉中心 (m): {poses.get('base_target_m', camera_point)}")
-    _log(f"[坐标] 变换: {poses['transform_method']}")
-    _log(f"[坐标] 水平抓取点 (m): {GRASP_POS}")
-    _log(f"[坐标] 预抓取(后方就位, -X): {PRE_GRASP}")
+    _log(f"[坐标] 相机 optical (m): {camera_point}")
+    _log(f"[坐标] 视觉中心 (m): {poses['base_target_m']}")
+    _log(f"[坐标] 抓取点 (m): {GRASP_POS}")
+    _log(f"[坐标] 预抓取 (m): {PRE_GRASP}")
     _log(f"[坐标] 后撤 (m): {RETREAT}")
-    _log(f"[姿态] 抓取侧水平 quat_xyzw: {ACTIVE_GRASP_QUAT}")
-    _log("[坐标] 微调: vision_lim/config/wheeled_head_camera.yaml "
-         "(temp_x / temp_y / offset_z / quat)")
+    _log(f"[姿态] quat_xyzw: {ACTIVE_GRASP_QUAT}")
+    _log("[提示] 调参请编辑本文件顶部「用户参数区」")
 
 
 def run_grasp(hand: str, grasp_width: int, grasp_effort: float,
               skip_gripper: bool, skip_arm_mode: bool,
-              camera_point: tuple, config_path: str, use_tf: bool) -> bool:
+              camera_point: tuple) -> bool:
     import rospy
 
     rospy.init_node("grasp_from_offline_vision", anonymous=True)
-    _log("[0] ROS 节点已启动")
-
-    _apply_grasp_coordinates(camera_point, config_path, use_tf, hand)
+    _apply_grasp_coordinates(camera_point, hand)
 
     if not skip_arm_mode:
-        if not _set_arm_mode_external():
-            _log(
-                "[手臂] 未能切换外部控制，继续执行。"
-                "若手臂不动请改用: --skip-arm-mode 或先手动切到外部控制"
-            )
+        _set_arm_mode_external()
         rospy.sleep(0.5)
-    else:
-        _log("[手臂] 跳过 mode 设置 (--skip-arm-mode)")
 
     use_target_poses = False
     arm_pub = None
     try:
         from kuavo_sdk.msg import armTargetPoses
-
         arm_pub = rospy.Publisher(
             "/kuavo_arm_target_poses", armTargetPoses, queue_size=10, latch=True
         )
         if _wait_for_connections(arm_pub, timeout=3.0):
             use_target_poses = True
-            _log("[手臂] 使用 /kuavo_arm_target_poses")
-        else:
-            arm_pub = None
-            _log("[手臂] 无订阅者，改用 /kuavo_arm_traj")
-    except Exception as e:
-        _log(f"[手臂] armTargetPoses 不可用 ({e})，改用 /kuavo_arm_traj")
+            _log("[手臂] /kuavo_arm_target_poses")
+    except Exception:
+        _log("[手臂] 改用 /kuavo_arm_traj")
 
-    _log("[2] 连接 IK 服务 ...")
     ik_proxy = _resolve_ik_proxy()
 
     if not skip_gripper:
-        try:
-            _claw_cmd(hand, 0)
-            rospy.sleep(0.8)
-        except Exception as e:
-            _log(f"[夹爪] 张开跳过: {e}")
-    else:
-        _log("[夹爪] --skip-gripper")
+        _claw_cmd(hand, 0)
+        rospy.sleep(0.8)
 
     if not _move_to(ik_proxy, arm_pub, PRE_GRASP, hand, 2.0, "后方就位", use_target_poses):
         return False
-    if not _move_to(ik_proxy, arm_pub, GRASP_POS, hand, 3.0, "前伸水平抓取", use_target_poses):
+    if not _move_to(ik_proxy, arm_pub, GRASP_POS, hand, 3.0, "前伸抓取", use_target_poses):
         return False
 
     if not skip_gripper:
-        try:
-            _claw_cmd(hand, grasp_width, effort=grasp_effort)
-            rospy.sleep(1.5)
-        except Exception as e:
-            _log(f"[夹爪] 闭合失败: {e}")
-            return False
+        _claw_cmd(hand, grasp_width, effort=grasp_effort)
+        rospy.sleep(1.5)
 
-    if not _move_to(ik_proxy, arm_pub, RETREAT, hand, 2.0, "后撤抬起", use_target_poses):
+    if not _move_to(ik_proxy, arm_pub, RETREAT, hand, 2.0, "后撤", use_target_poses):
         return False
 
     _log("[完成] 抓取流程结束")
@@ -550,66 +539,42 @@ def run_grasp(hand: str, grasp_width: int, grasp_effort: float,
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="固定坐标抓取")
+    parser = argparse.ArgumentParser(
+        description="固定坐标抓取（单文件，参数在脚本顶部用户参数区）"
+    )
     parser.add_argument("--hand", choices=("left", "right"), default="right")
-    parser.add_argument("--grasp-width", type=int, default=90)
-    parser.add_argument("--grasp-effort", type=float, default=1.5)
+    parser.add_argument("--grasp-width", type=int, default=GRASP_WIDTH)
+    parser.add_argument("--grasp-effort", type=float, default=GRASP_EFFORT)
     parser.add_argument("--skip-gripper", action="store_true")
-    parser.add_argument("--skip-arm-mode", action="store_true",
-                        help="不调用 arm_traj_change_mode（已在外部模式时用）")
+    parser.add_argument("--skip-arm-mode", action="store_true")
     parser.add_argument(
         "--grasp-json",
-        default=str(_SCRIPT_DIR.parent / "instance" / "grasp_target.json"),
-        help="含 camera_coord_m 的 JSON（默认仓库根目录 grasp_target.json）",
+        default=str(DEFAULT_GRASP_JSON),
+        help="含 camera_coord_m 的 JSON，默认同目录 grasp_target.json",
     )
     parser.add_argument(
-        "--camera-coord",
-        nargs=3,
-        type=float,
-        metavar=("X", "Y", "Z"),
-        help="覆盖 JSON，直接指定相机 optical 坐标 (m)",
+        "--camera-coord", nargs=3, type=float, metavar=("X", "Y", "Z"),
+        help="覆盖 JSON/默认，直接指定相机 optical 坐标 (m)",
     )
-    parser.add_argument(
-        "--camera-config",
-        default="",
-        help="wheeled_head_camera.yaml 路径，默认 vision_lim/config/...",
-    )
-    parser.add_argument(
-        "--use-tf",
-        action="store_true",
-        help="用 /tf 将相机点变换到 base_link（需 ros_interface 发布 tf）",
-    )
-    parser.add_argument(
-        "--dry-coords",
-        action="store_true",
-        help="只打印坐标变换结果，不控制机械臂",
-    )
+    parser.add_argument("--dry-coords", action="store_true",
+                        help="只打印坐标，不控制机械臂")
     args = parser.parse_args()
 
     if args.camera_coord:
         camera_point = tuple(args.camera_coord)
     else:
         jpath = Path(args.grasp_json)
-        if not jpath.is_file():
-            camera_point = DEFAULT_CAMERA_POINT
-            _log(f"[坐标] 未找到 {jpath}，使用默认相机点")
-        else:
+        if jpath.is_file():
             camera_point = _load_camera_point_from_json(jpath)
+        else:
+            camera_point = CAMERA_POINT_M
+            _log(f"[坐标] 未找到 {jpath}，使用脚本内 CAMERA_POINT_M")
 
     if args.dry_coords:
-        cfg_path = args.camera_config or None
-        if args.use_tf:
-            _check_ros_packages()
-            import rospy
-            rospy.init_node("grasp_coord_preview", anonymous=True)
-        _apply_grasp_coordinates(
-            camera_point, cfg_path or "", args.use_tf, args.hand
-        )
+        _apply_grasp_coordinates(camera_point, args.hand)
         return 0
 
     _check_ros_packages()
-    _log(f"hand={args.hand} 相机点={camera_point} use_tf={args.use_tf}")
-
     try:
         ok = run_grasp(
             hand=args.hand,
@@ -618,12 +583,9 @@ def main() -> int:
             skip_gripper=args.skip_gripper,
             skip_arm_mode=args.skip_arm_mode,
             camera_point=camera_point,
-            config_path=args.camera_config,
-            use_tf=args.use_tf,
         )
         return 0 if ok else 1
     except Exception:
-        _log("[错误] 执行异常:")
         traceback.print_exc()
         return 1
 
