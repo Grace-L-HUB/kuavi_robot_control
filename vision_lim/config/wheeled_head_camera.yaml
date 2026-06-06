@@ -1,40 +1,54 @@
-# 轮臂 Kuavo 4 Pro：头顶相机俯视 -> IK 基座 (X前 Y左 Z上)
-# pitch 由侧视照片估计；head yaw=0（水平正中）
-
-camera_frame: "camera_depth_optical_frame"
+camera_frame: camera_depth_optical_frame
 ik_target_frames:
-  - "base_link"
-  - "torso"
-  - "pelvis"
-  - "odom"
-  - "base"
-
+- base_link
+- torso
+- pelvis
+- odom
+- base
 static_transform:
   pitch_deg: 51.0
-  camera_position_in_base: [0.10, 0.0, 0.58]
+  camera_position_in_base:
+  - 0.1
+  - 0.0
+  - 0.58
   lateral_sign: -1.0
   forward_depth_scale: 1.0
   height_from_depth_scale: 0.95
-
 grasp_offsets:
   forward_extra_m: 0.02
   depth_forward_scale: 1.0
-  right_y_bias: -0.04
-  left_y_bias: 0.04
-  grasp_z_bias: 0.04
+  right_y_bias: 0.02
+  left_y_bias: -0.02
+  grasp_z_bias: 0.0
   grasp_depth_z: 0.0
-  pre_grasp_back_m: 0.10
-  pre_grasp_lift_z: 0.04
+  pre_grasp_back_m: 0.1
+  pre_grasp_lift_z: 0.03
   retreat_back_m: 0.08
-  retreat_lift_z: 0.06
-
+  retreat_lift_z: 0.05
 end_effector_orientation:
-  palm_down: [0.0, -0.70682518, 0.0, 0.70738827]
+  palm_down:
+  - 0.0
+  - -0.70682518
+  - 0.0
+  - 0.70738827
   right:
-    quat_xyzw: [-0.5002, -0.4998, -0.4998, 0.5002]
+    quat_xyzw:
+    - -0.5002
+    - -0.4998
+    - -0.4998
+    - 0.5002
   left:
-    quat_xyzw: [0.5002, -0.4998, 0.4998, 0.5002]
-
+    quat_xyzw:
+    - 0.5002
+    - -0.4998
+    - 0.4998
+    - 0.5002
 inactive_arm_pose:
-  left: [0.45, 0.25, 0.11988012]
-  right: [0.45, -0.25, 0.11988012]
+  left:
+  - 0.45
+  - 0.25
+  - 0.11988012
+  right:
+  - 0.45
+  - -0.25
+  - 0.11988012
