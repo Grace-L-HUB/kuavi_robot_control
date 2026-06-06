@@ -62,6 +62,8 @@ except ImportError:
                 "right_y_bias": 0.02,
                 "left_y_bias": -0.02,
                 "grasp_z_bias": 0.0,
+                "left_grasp_z_bias": -0.17,
+                "right_grasp_z_bias": 0.0,
                 "grasp_depth_z": 0.0,
                 "pre_grasp_back_m": 0.10,
                 "pre_grasp_lift_z": 0.03,
@@ -71,6 +73,7 @@ except ImportError:
             "end_effector_orientation": {
                 "palm_down": [0.0, -0.70682518, 0.0, 0.70738827],
                 "right": {"quat_xyzw": [-0.5002, -0.4998, -0.4998, 0.5002]},
+                "left": {"quat_xyzw": [0.5002, -0.4998, -0.4998, 0.5002]},
             },
             "inactive_arm_pose": {
                 "left": [0.45, 0.25, 0.11988012],
@@ -80,9 +83,11 @@ except ImportError:
 
     def get_grasp_quat(hand, config=None):
         eo = (config or load_wheeled_camera_config()).get("end_effector_orientation", {})
-        return list(eo.get("right", {}).get(
-            "quat_xyzw", [-0.5002, -0.4998, -0.4998, 0.5002]
-        ))
+        key = "left" if hand == "left" else "right"
+        block = eo.get(key, {})
+        if isinstance(block, dict) and block.get("quat_xyzw"):
+            return list(block["quat_xyzw"])
+        return list(eo.get("palm_down", [0.0, -0.70682518, 0.0, 0.70738827]))
 
     def get_inactive_arm_pose(hand, config=None):
         p = (config or load_wheeled_camera_config()).get("inactive_arm_pose", {})
@@ -100,8 +105,13 @@ except ImportError:
         lat = float(st.get("lateral_sign", -1.0))
         x_b = cx + z_c * c + y_c * s
         x_b += float(off.get("forward_extra_m", 0.02))
-        y_b = cy + lat * x_c + float(off.get("right_y_bias", 0.02))
-        z_b = cz - z_c * s + y_c * c * 0.15 + float(off.get("grasp_z_bias", 0.0))
+        if hand == "right":
+            y_b = cy + lat * x_c + float(off.get("right_y_bias", 0.02))
+            z_extra = float(off.get("right_grasp_z_bias", off.get("grasp_z_bias", 0.0)))
+        else:
+            y_b = cy + lat * x_c + float(off.get("left_y_bias", -0.02))
+            z_extra = float(off.get("left_grasp_z_bias", off.get("grasp_z_bias", 0.0)))
+        z_b = cz - z_c * s + y_c * c * 0.15 + z_extra
         grasp = (x_b, y_b, z_b)
         pre = (
             grasp[0] - float(off.get("pre_grasp_back_m", 0.14)),

@@ -41,6 +41,8 @@ def _default_config_dict() -> Dict:
             "depth_forward_scale": 1.05,
             "right_y_bias": -0.18,
             "left_y_bias": 0.18,
+            "left_grasp_z_bias": -0.17,
+            "right_grasp_z_bias": 0.0,
             "pre_grasp_back_m": 0.14,
             "pre_grasp_lift_z": 0.05,
             "retreat_back_m": 0.12,
@@ -49,8 +51,8 @@ def _default_config_dict() -> Dict:
         },
         "end_effector_orientation": {
             "palm_down": [0.0, -0.70682518, 0.0, 0.70738827],
-            "right": {"quat_xyzw": [0.5, -0.5, 0.5, 0.5]},
-            "left": {"quat_xyzw": [0.5, 0.5, 0.5, -0.5]},
+            "right": {"quat_xyzw": [-0.5002, -0.4998, -0.4998, 0.5002]},
+            "left": {"quat_xyzw": [0.5002, -0.4998, -0.4998, 0.5002]},
         },
         "inactive_arm_pose": {
             "left": [0.45, 0.25, 0.11988012],
@@ -116,10 +118,12 @@ def _apply_grasp_offsets(
 
     if hand == "right":
         gy = cy + float(off.get("right_y_bias", 0.0))
+        z_hand = float(off.get("right_grasp_z_bias", off.get("grasp_z_bias", 0.0)))
     else:
         gy = cy + float(off.get("left_y_bias", 0.0))
+        z_hand = float(off.get("left_grasp_z_bias", off.get("grasp_z_bias", 0.0)))
 
-    gz = cz + float(off.get("grasp_depth_z", 0.0)) + float(off.get("grasp_z_bias", 0.0))
+    gz = cz + float(off.get("grasp_depth_z", 0.0)) + z_hand
     return (gx, gy, gz)
 
 

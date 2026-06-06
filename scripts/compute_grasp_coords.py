@@ -117,6 +117,8 @@ def main() -> None:
             "right_y_bias": 0.02,
             "left_y_bias": -0.02,
             "grasp_z_bias": 0.0,
+            "left_grasp_z_bias": -0.17,
+            "right_grasp_z_bias": 0.0,
             "grasp_depth_z": 0.0,
             "pre_grasp_back_m": 0.10,
             "pre_grasp_lift_z": 0.03,
@@ -126,7 +128,7 @@ def main() -> None:
         "end_effector_orientation": {
             "palm_down": [0.0, -0.70682518, 0.0, 0.70738827],
             "right": {"quat_xyzw": [-0.5002, -0.4998, -0.4998, 0.5002]},
-            "left": {"quat_xyzw": [0.5002, -0.4998, 0.4998, 0.5002]},
+            "left": {"quat_xyzw": [0.5002, -0.4998, -0.4998, 0.5002]},
         },
         "inactive_arm_pose": {
             "left": [0.45, 0.25, 0.11988012],
