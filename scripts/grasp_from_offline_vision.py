@@ -12,7 +12,7 @@
   python3 grasp_from_offline_vision.py --dry-coords --hand right
   python3 grasp_from_offline_vision.py --hand right
 
-  # --hand left：左手超出工作空间时，自动改由右手抓取（坐标/轨迹/夹爪均为右手）
+  # --hand left：保持当前关节位置不变，仅闭合右手夹爪（不发送手臂轨迹）
   python3 grasp_from_offline_vision.py --hand left
 
 【调参】只改下方 ===== 用户参数区 =====，保存后重跑 --dry-coords 预览坐标。
@@ -98,13 +98,6 @@ PRE_GRASP: Tuple[float, float, float] = (0.0, 0.0, 0.0)
 GRASP_POS: Tuple[float, float, float] = (0.0, 0.0, 0.0)
 RETREAT: Tuple[float, float, float] = (0.0, 0.0, 0.0)
 ACTIVE_GRASP_QUAT = list(GRASP_QUAT_RIGHT)
-
-
-def _exec_hand(requested_hand: str) -> str:
-    """左手超出工作空间时，--hand left 改由右手执行（坐标、IK、夹爪均为右手）。"""
-    if requested_hand == "left":
-        return "right"
-    return requested_hand
 
 
 def _build_config_dict() -> Dict:
@@ -488,35 +481,49 @@ def _load_camera_point_from_json(path: Path) -> tuple:
     raise ValueError(f"{path} 缺少 camera_coord_m")
 
 
-def _apply_grasp_coordinates(camera_point: tuple, requested_hand: str) -> None:
+def _apply_grasp_coordinates(camera_point: tuple, hand: str) -> None:
     global PRE_GRASP, GRASP_POS, RETREAT
     global ACTIVE_GRASP_QUAT, INACTIVE_LEFT_POS, INACTIVE_RIGHT_POS
 
-    exec_hand = _exec_hand(requested_hand)
-    if requested_hand == "left":
-        _log("[策略] --hand left：左手超出工作空间，改由右手执行")
-        _log("[策略] 使用右手抓取坐标与姿态，左臂保持待机，仅右手运动并闭合夹爪")
-
-    poses = resolve_grasp_poses_arm_base(camera_point, hand=exec_hand)
+    poses = resolve_grasp_poses_arm_base(camera_point, hand=hand)
     PRE_GRASP = tuple(poses["pre_grasp"])
     GRASP_POS = tuple(poses["grasp"])
     RETREAT = tuple(poses["retreat"])
     ACTIVE_GRASP_QUAT = list(poses["grasp_quat_xyzw"])
 
     inact = poses["inactive_arm_pose"]
-    if exec_hand == "right":
+    if hand == "right":
         INACTIVE_LEFT_POS = list(inact)
     else:
         INACTIVE_RIGHT_POS = list(inact)
 
-    _log(f"[坐标] 请求手: {requested_hand} | 执行手: {exec_hand}")
+    _log(f"[坐标] 手: {hand}")
     _log(f"[坐标] 相机 optical (m): {camera_point}")
     _log(f"[坐标] 视觉中心 (m): {poses['base_target_m']}")
     _log(f"[坐标] 抓取点 (m): {GRASP_POS}")
     _log(f"[坐标] 预抓取 (m): {PRE_GRASP}")
     _log(f"[坐标] 后撤 (m): {RETREAT}")
-    _log(f"[姿态] quat_xyzw ({exec_hand}): {ACTIVE_GRASP_QUAT}")
+    _log(f"[姿态] quat_xyzw: {ACTIVE_GRASP_QUAT}")
     _log("[提示] 调参请编辑本文件顶部「用户参数区」")
+
+
+def _run_left_claw_only(grasp_width: int, grasp_effort: float,
+                        skip_gripper: bool) -> bool:
+    """--hand left：不改动任何关节，仅闭合右手夹爪。"""
+    import rospy
+
+    _log("[策略] --hand left：保持当前关节位置，不发送手臂轨迹")
+    _log("[策略] 仅闭合右手夹爪 right_claw")
+
+    if skip_gripper:
+        _log("[夹爪] --skip-gripper，无操作")
+        return True
+
+    if not _claw_cmd("right", grasp_width, effort=grasp_effort):
+        return False
+    rospy.sleep(1.5)
+    _log("[完成] 右手夹爪已闭合，手臂位置未改动")
+    return True
 
 
 def run_grasp(hand: str, grasp_width: int, grasp_effort: float,
@@ -524,8 +531,11 @@ def run_grasp(hand: str, grasp_width: int, grasp_effort: float,
               camera_point: tuple) -> bool:
     import rospy
 
-    exec_hand = _exec_hand(hand)
     rospy.init_node("grasp_from_offline_vision", anonymous=True)
+
+    if hand == "left":
+        return _run_left_claw_only(grasp_width, grasp_effort, skip_gripper)
+
     _apply_grasp_coordinates(camera_point, hand)
 
     if not skip_arm_mode:
@@ -548,22 +558,22 @@ def run_grasp(hand: str, grasp_width: int, grasp_effort: float,
     ik_proxy = _resolve_ik_proxy()
 
     if not skip_gripper:
-        _claw_cmd(exec_hand, 0)
+        _claw_cmd(hand, 0)
         rospy.sleep(0.8)
 
-    if not _move_to(ik_proxy, arm_pub, PRE_GRASP, exec_hand, 2.0, "后方就位", use_target_poses):
+    if not _move_to(ik_proxy, arm_pub, PRE_GRASP, hand, 2.0, "后方就位", use_target_poses):
         return False
-    if not _move_to(ik_proxy, arm_pub, GRASP_POS, exec_hand, 3.0, "前伸抓取", use_target_poses):
+    if not _move_to(ik_proxy, arm_pub, GRASP_POS, hand, 3.0, "前伸抓取", use_target_poses):
         return False
 
     if not skip_gripper:
-        _claw_cmd(exec_hand, grasp_width, effort=grasp_effort)
+        _claw_cmd(hand, grasp_width, effort=grasp_effort)
         rospy.sleep(1.5)
 
-    if not _move_to(ik_proxy, arm_pub, RETREAT, exec_hand, 2.0, "后撤", use_target_poses):
+    if not _move_to(ik_proxy, arm_pub, RETREAT, hand, 2.0, "后撤", use_target_poses):
         return False
 
-    _log(f"[完成] 抓取流程结束（请求 {hand}，执行 {exec_hand}）")
+    _log("[完成] 抓取流程结束")
     return True
 
 
@@ -601,6 +611,8 @@ def main() -> int:
 
     if args.dry_coords:
         _apply_grasp_coordinates(camera_point, args.hand)
+        if args.hand == "left":
+            _log("[策略] 实机 --hand left 时不发手臂轨迹，仅闭合 right_claw")
         return 0
 
     _check_ros_packages()
