@@ -59,8 +59,8 @@ OFFSET_Z = -0.12
 # 左手抓取微调（在官方 temp 偏置之后再叠加，右手不受影响）
 # +X 前伸；-Y 向中心收；-Z 压低（水平已准，主要调 Z）
 LEFT_GRASP_X_BIAS = -0.065
-LEFT_GRASP_Y_BIAS = -0.13
-LEFT_GRASP_Z_BIAS = -0.36
+LEFT_GRASP_Y_BIAS = -0.16
+LEFT_GRASP_Z_BIAS = -0.405
 
 # 预抓取 / 后撤（沿 base X：预抓取在抓取点后方 -X）
 PRE_GRASP_BACK_M = 0.10
