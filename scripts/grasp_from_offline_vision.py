@@ -43,24 +43,29 @@ try:
         resolve_grasp_poses_arm_base,
     )
 except ImportError:
-    DEFAULT_CAMERA_POINT = (-0.044330238372661326, 0.08261372036424994, 0.64)
+    DEFAULT_CAMERA_POINT = (-0.013972711859484142, 0.0325017152875609, 0.772)
 
     def load_wheeled_camera_config(path=None):
         return {
             "camera_frame": "camera_depth_optical_frame",
             "ik_target_frames": ["base_link", "torso", "pelvis"],
             "static_transform": {
-                "pitch_deg": 48.0,
-                "camera_position_in_base": [0.12, 0.0, 0.55],
+                "pitch_deg": 51.0,
+                "camera_position_in_base": [0.10, 0.0, 0.58],
                 "lateral_sign": -1.0,
+                "forward_depth_scale": 1.0,
+                "height_from_depth_scale": 0.95,
             },
             "grasp_offsets": {
-                "forward_extra_m": 0.10,
-                "right_y_bias": -0.08,
-                "grasp_z_bias": -0.06,
-                "pre_grasp_back_m": 0.12,
-                "pre_grasp_lift_z": 0.03,
-                "retreat_back_m": 0.10,
+                "forward_extra_m": 0.02,
+                "depth_forward_scale": 1.0,
+                "right_y_bias": -0.04,
+                "left_y_bias": 0.04,
+                "grasp_z_bias": 0.04,
+                "grasp_depth_z": 0.0,
+                "pre_grasp_back_m": 0.10,
+                "pre_grasp_lift_z": 0.04,
+                "retreat_back_m": 0.08,
                 "retreat_lift_z": 0.06,
             },
             "end_effector_orientation": {
@@ -94,9 +99,9 @@ except ImportError:
         cx, cy, cz = st["camera_position_in_base"]
         lat = float(st.get("lateral_sign", -1.0))
         x_b = cx + z_c * c + y_c * s
-        x_b += float(off.get("forward_extra_m", 0.10))
-        y_b = cy + lat * x_c + float(off.get("right_y_bias", -0.08))
-        z_b = cz - z_c * s + y_c * c * 0.15 + float(off.get("grasp_z_bias", -0.06))
+        x_b += float(off.get("forward_extra_m", 0.02))
+        y_b = cy + lat * x_c + float(off.get("right_y_bias", -0.04))
+        z_b = cz - z_c * s + y_c * c * 0.15 + float(off.get("grasp_z_bias", 0.04))
         grasp = (x_b, y_b, z_b)
         pre = (
             grasp[0] - float(off.get("pre_grasp_back_m", 0.14)),
@@ -539,7 +544,7 @@ def main() -> int:
                         help="不调用 arm_traj_change_mode（已在外部模式时用）")
     parser.add_argument(
         "--grasp-json",
-        default=str(_SCRIPT_DIR.parent / "grasp_target.json"),
+        default=str(_SCRIPT_DIR.parent / "instance" / "grasp_target.json"),
         help="含 camera_coord_m 的 JSON（默认仓库根目录 grasp_target.json）",
     )
     parser.add_argument(

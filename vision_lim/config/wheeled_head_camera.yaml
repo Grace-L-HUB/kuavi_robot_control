@@ -1,5 +1,5 @@
-# 轮臂：头顶相机俯视 -> IK 基座 (X前 Y左 Z上)
-# 水瓶在机器人正前方偏下：X 偏大、|Y| 偏小、Z 偏低（桌面高度）
+# 轮臂 Kuavo 4 Pro：头顶相机俯视 -> IK 基座 (X前 Y左 Z上)
+# pitch 由侧视照片估计；head yaw=0（水平正中）
 
 camera_frame: "camera_depth_optical_frame"
 ik_target_frames:
@@ -10,31 +10,24 @@ ik_target_frames:
   - "base"
 
 static_transform:
-  pitch_deg: 48.0
-  camera_position_in_base: [0.12, 0.0, 0.55]
+  pitch_deg: 51.0
+  camera_position_in_base: [0.10, 0.0, 0.58]
   lateral_sign: -1.0
-  # 深度更多映射到前方，减少抬高
-  forward_depth_scale: 1.08
-  height_from_depth_scale: 1.0
+  forward_depth_scale: 1.0
+  height_from_depth_scale: 0.95
 
 grasp_offsets:
-  # 前方：深度已给出 ~0.5m 前向，额外少量即可（避免过远）
-  forward_extra_m: 0.10
+  forward_extra_m: 0.02
   depth_forward_scale: 1.0
-  # 正前方略偏右：右手 Y 为负，幅度不宜过大
-  right_y_bias: -0.08
-  left_y_bias: 0.08
-  # 整体压低到桌面高度（米）
-  grasp_z_bias: -0.06
+  right_y_bias: -0.04
+  left_y_bias: 0.04
+  grasp_z_bias: 0.04
   grasp_depth_z: 0.0
-  pre_grasp_back_m: 0.12
-  pre_grasp_lift_z: 0.03
-  retreat_back_m: 0.10
+  pre_grasp_back_m: 0.10
+  pre_grasp_lift_z: 0.04
+  retreat_back_m: 0.08
   retreat_lift_z: 0.06
 
-# 末端 quat_xyzw（相对 IK 基座）
-# 错误 [0.5,-0.5,0.5,0.5] ≈ 掌心朝下 * RotX(+90°) → 夹爪竖直、肩侧近水平
-# 正确 ≈ 掌心朝下 * RotX(-90°) → 夹爪水平朝前、肩侧更接近竖直
 end_effector_orientation:
   palm_down: [0.0, -0.70682518, 0.0, 0.70738827]
   right:

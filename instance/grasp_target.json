@@ -1,51 +1,87 @@
 {
-  "pixel": [
-    297,
-    287
+  "pixel_color": [
+    320,
+    255
   ],
-  "depth_m": 0.64,
+  "pixel_depth": [
+    317,
+    253
+  ],
+  "depth_m": 0.772,
   "camera_coord_m": [
-    -0.044330238372661326,
-    0.08261372036424994,
-    0.64
+    -0.014,
+    0.0325,
+    0.772
   ],
   "arm_coord_m": [
-    0.713,
-    -0.036,
-    0.023
+    0.6185,
+    -0.026,
+    0.0531
   ],
-  "transform_method": "static_pitch_wheeled_head",
-  "note": "arm_coord 由 camera_coord 经头顶俯视变换得到，非直接复制相机坐标",
-  "detection": {
-    "class_name": "class_39",
-    "confidence": 0.7872632741928101,
-    "bbox_center": [
-      297,
-      287
+  "transform_method": "static_pitch",
+  "static_transform": {
+    "pitch_deg": 51.0,
+    "camera_position_in_base": [
+      0.1,
+      0.0,
+      0.58
     ],
-    "bbox": [
-      267,
-      224,
-      328,
-      351
-    ]
+    "lateral_sign": -1.0,
+    "forward_depth_scale": 1.0,
+    "height_from_depth_scale": 0.95
+  },
+  "grasp_offsets": {
+    "forward_extra_m": 0.02,
+    "depth_forward_scale": 1.0,
+    "right_y_bias": -0.04,
+    "left_y_bias": 0.04,
+    "grasp_z_bias": 0.04,
+    "grasp_depth_z": 0.0,
+    "pre_grasp_back_m": 0.1,
+    "pre_grasp_lift_z": 0.04,
+    "retreat_back_m": 0.08,
+    "retreat_lift_z": 0.06
   },
   "color_intrinsics": {
     "fx": 605.215087890625,
     "fy": 604.91943359375,
     "cx": 321.31610107421875,
-    "cy": 248.95516967773438
+    "cy": 248.95516967773438,
+    "width": 0,
+    "height": 0,
+    "frame_id": "camera_color_optical_frame"
   },
   "depth_intrinsics": {
     "fx": 390.8797607421875,
     "fy": 390.8797607421875,
     "cx": 324.0746765136719,
-    "cy": 236.543701171875
+    "cy": 236.543701171875,
+    "width": 0,
+    "height": 0,
+    "frame_id": "camera_depth_optical_frame"
   },
   "grasp_plan": {
-    "pre_grasp": [0.593, -0.036, 0.053],
-    "grasp": [0.713, -0.036, 0.023],
-    "retreat": [0.613, -0.036, 0.083]
+    "pre_grasp": [
+      0.5185,
+      -0.026,
+      0.0931
+    ],
+    "grasp": [
+      0.6185,
+      -0.026,
+      0.0531
+    ],
+    "retreat": [
+      0.5385,
+      -0.026,
+      0.1131
+    ]
   },
-  "grasp_quat_xyzw": [-0.5002, -0.4998, -0.4998, 0.5002]
+  "grasp_quat_xyzw": [
+    -0.5002,
+    -0.4998,
+    -0.4998,
+    0.5002
+  ],
+  "note": "Kuavo4Pro 轮臂; head yaw=0; pitch=51.0deg from side photo"
 }

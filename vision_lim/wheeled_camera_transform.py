@@ -13,9 +13,9 @@ import yaml
 DEFAULT_CONFIG = Path(__file__).parent / "config" / "wheeled_head_camera.yaml"
 
 DEFAULT_CAMERA_POINT = (
-    -0.044330238372661326,
-    0.08261372036424994,
-    0.64,
+    -0.013972711859484142,
+    0.0325017152875609,
+    0.772,
 )
 
 
