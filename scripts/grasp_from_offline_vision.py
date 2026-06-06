@@ -68,6 +68,8 @@ PRE_GRASP_LIFT_Z = 0.03
 RETREAT_BACK_M = 0.08
 RETREAT_LIFT_Z = 0.05
 # 抓取前：先到终点正上方（纯垂直流程，跳过侧向后方预抓取）
+# 优先用 APPROACH_ABOVE_Z_TARGET（base 绝对高度）；为 None 时用相对偏移 APPROACH_ABOVE_Z
+APPROACH_ABOVE_Z_TARGET = -0.1
 APPROACH_ABOVE_Z = 0.30
 # 夹紧后垂直上提高度（沿 base +Z，与抓取点同 X/Y）
 POST_GRASP_LIFT_Z = 0.22
@@ -138,6 +140,7 @@ def _build_config_dict() -> Dict:
             "retreat_back_m": RETREAT_BACK_M,
             "retreat_lift_z": RETREAT_LIFT_Z,
             "approach_above_z": APPROACH_ABOVE_Z,
+            "approach_above_z_target": APPROACH_ABOVE_Z_TARGET,
             "post_grasp_lift_z": POST_GRASP_LIFT_Z,
         },
         "end_effector_orientation": {
@@ -231,9 +234,13 @@ def resolve_grasp_poses_arm_base(
     ret_lift = float(off["retreat_lift_z"])
     post_lift = float(off.get("post_grasp_lift_z", 0.0))
     above_z = float(off.get("approach_above_z", 0.0))
+    above_target = off.get("approach_above_z_target")
 
     pre = (grasp[0] - pre_back, grasp[1], grasp[2] + pre_lift)
-    approach_above = (grasp[0], grasp[1], grasp[2] + above_z)
+    if above_target is not None:
+        approach_above = (grasp[0], grasp[1], float(above_target))
+    else:
+        approach_above = (grasp[0], grasp[1], grasp[2] + above_z)
     lift = (grasp[0], grasp[1], grasp[2] + post_lift)
     retreat = (grasp[0] - ret_back, grasp[1], grasp[2] + post_lift + ret_lift)
 
