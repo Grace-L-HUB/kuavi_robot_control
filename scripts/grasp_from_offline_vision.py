@@ -67,6 +67,8 @@ PRE_GRASP_BACK_M = 0.10
 PRE_GRASP_LIFT_Z = 0.03
 RETREAT_BACK_M = 0.08
 RETREAT_LIFT_Z = 0.05
+# 抓取前：先到终点正上方，再垂直下降（与抓取点同 X/Y）
+APPROACH_ABOVE_Z = 0.10
 # 夹紧后垂直上提高度（沿 base +Z，与抓取点同 X/Y）
 POST_GRASP_LIFT_Z = 0.18
 
@@ -97,6 +99,7 @@ DEFAULT_GRASP_JSON = _SCRIPT_DIR / "grasp_target.json"
 # =============================================================================
 
 PRE_GRASP: Tuple[float, float, float] = (0.0, 0.0, 0.0)
+APPROACH_ABOVE: Tuple[float, float, float] = (0.0, 0.0, 0.0)
 GRASP_POS: Tuple[float, float, float] = (0.0, 0.0, 0.0)
 LIFT_POS: Tuple[float, float, float] = (0.0, 0.0, 0.0)
 RETREAT: Tuple[float, float, float] = (0.0, 0.0, 0.0)
@@ -132,6 +135,7 @@ def _build_config_dict() -> Dict:
             "pre_grasp_lift_z": PRE_GRASP_LIFT_Z,
             "retreat_back_m": RETREAT_BACK_M,
             "retreat_lift_z": RETREAT_LIFT_Z,
+            "approach_above_z": APPROACH_ABOVE_Z,
             "post_grasp_lift_z": POST_GRASP_LIFT_Z,
         },
         "end_effector_orientation": {
@@ -224,8 +228,10 @@ def resolve_grasp_poses_arm_base(
     ret_back = float(off["retreat_back_m"])
     ret_lift = float(off["retreat_lift_z"])
     post_lift = float(off.get("post_grasp_lift_z", 0.0))
+    above_z = float(off.get("approach_above_z", 0.0))
 
     pre = (grasp[0] - pre_back, grasp[1], grasp[2] + pre_lift)
+    approach_above = (grasp[0], grasp[1], grasp[2] + above_z)
     lift = (grasp[0], grasp[1], grasp[2] + post_lift)
     retreat = (grasp[0] - ret_back, grasp[1], grasp[2] + post_lift + ret_lift)
 
@@ -234,6 +240,7 @@ def resolve_grasp_poses_arm_base(
         "base_target_m": list(base),
         "arm_coord_m": list(grasp),
         "pre_grasp": list(pre),
+        "approach_above": list(approach_above),
         "grasp": list(grasp),
         "lift": list(lift),
         "retreat": list(retreat),
@@ -494,11 +501,12 @@ def _load_camera_point_from_json(path: Path) -> tuple:
 
 
 def _apply_grasp_coordinates(camera_point: tuple, hand: str) -> None:
-    global PRE_GRASP, GRASP_POS, LIFT_POS, RETREAT
+    global PRE_GRASP, APPROACH_ABOVE, GRASP_POS, LIFT_POS, RETREAT
     global ACTIVE_GRASP_QUAT, INACTIVE_LEFT_POS, INACTIVE_RIGHT_POS
 
     poses = resolve_grasp_poses_arm_base(camera_point, hand=hand)
     PRE_GRASP = tuple(poses["pre_grasp"])
+    APPROACH_ABOVE = tuple(poses["approach_above"])
     GRASP_POS = tuple(poses["grasp"])
     LIFT_POS = tuple(poses["lift"])
     RETREAT = tuple(poses["retreat"])
@@ -515,6 +523,7 @@ def _apply_grasp_coordinates(camera_point: tuple, hand: str) -> None:
     _log(f"[坐标] 视觉中心 (m): {poses['base_target_m']}")
     _log(f"[坐标] 抓取点 (m): {GRASP_POS}")
     _log(f"[坐标] 预抓取 (m): {PRE_GRASP}")
+    _log(f"[坐标] 上方就位 (m): {APPROACH_ABOVE}")
     _log(f"[坐标] 上提 (m): {LIFT_POS}")
     _log(f"[坐标] 后撤 (m): {RETREAT}")
     _log(f"[姿态] quat_xyzw: {ACTIVE_GRASP_QUAT}")
@@ -558,7 +567,9 @@ def run_grasp(hand: str, grasp_width: int, grasp_effort: float,
 
     if not _move_to(ik_proxy, arm_pub, PRE_GRASP, hand, 2.0, "后方就位", use_target_poses):
         return False
-    if not _move_to(ik_proxy, arm_pub, GRASP_POS, hand, 3.0, "前伸抓取", use_target_poses):
+    if not _move_to(ik_proxy, arm_pub, APPROACH_ABOVE, hand, 2.5, "上方就位", use_target_poses):
+        return False
+    if not _move_to(ik_proxy, arm_pub, GRASP_POS, hand, 2.5, "下降抓取", use_target_poses):
         return False
 
     if not skip_gripper:
