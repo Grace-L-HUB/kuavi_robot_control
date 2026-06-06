@@ -71,7 +71,8 @@ RETREAT_LIFT_Z = 0.05
 # 优先用 APPROACH_ABOVE_Z_TARGET（base 绝对高度）；为 None 时用相对偏移 APPROACH_ABOVE_Z
 APPROACH_ABOVE_Z_TARGET = -0.145
 APPROACH_ABOVE_Z = 0.30
-# 夹紧后垂直上提高度（沿 base +Z，与抓取点同 X/Y）
+# 夹紧后上提：与上方就位同高（APPROACH_ABOVE_Z_TARGET）；否则用相对偏移 POST_GRASP_LIFT_Z
+POST_GRASP_LIFT_MATCH_APPROACH = True
 POST_GRASP_LIFT_Z = 0.22
 # 是否执行后方预抓取（False=直接到上方，减少 workspace 越界）
 USE_PRE_GRASP = False
@@ -142,6 +143,7 @@ def _build_config_dict() -> Dict:
             "approach_above_z": APPROACH_ABOVE_Z,
             "approach_above_z_target": APPROACH_ABOVE_Z_TARGET,
             "post_grasp_lift_z": POST_GRASP_LIFT_Z,
+            "post_grasp_lift_match_approach": POST_GRASP_LIFT_MATCH_APPROACH,
         },
         "end_effector_orientation": {
             "palm_down": list(PALM_DOWN_QUAT),
@@ -241,8 +243,13 @@ def resolve_grasp_poses_arm_base(
         approach_above = (grasp[0], grasp[1], float(above_target))
     else:
         approach_above = (grasp[0], grasp[1], grasp[2] + above_z)
-    lift = (grasp[0], grasp[1], grasp[2] + post_lift)
-    retreat = (grasp[0] - ret_back, grasp[1], grasp[2] + post_lift + ret_lift)
+
+    match_approach = bool(off.get("post_grasp_lift_match_approach", False))
+    if match_approach and above_target is not None:
+        lift = (grasp[0], grasp[1], float(above_target))
+    else:
+        lift = (grasp[0], grasp[1], grasp[2] + post_lift)
+    retreat = (grasp[0] - ret_back, grasp[1], lift[2] + ret_lift)
 
     return {
         "camera_coord_m": list(point_cam),
