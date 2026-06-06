@@ -12,7 +12,7 @@
   python3 grasp_from_offline_vision.py --dry-coords --hand right
   python3 grasp_from_offline_vision.py --hand right
 
-  # --hand left：左手 IK 驱动双臂就位（右手顺势到待机位），到位后由 right_claw 抓取
+  # --hand left：左手 IK 双臂就位，到位后由 left_claw 抓取
   python3 grasp_from_offline_vision.py --hand left
 
 【调参】只改下方 ===== 用户参数区 =====，保存后重跑 --dry-coords 预览坐标。
@@ -57,10 +57,10 @@ TEMP_Y = 0.05
 OFFSET_Z = -0.12
 
 # 左手抓取微调（在官方 temp 偏置之后再叠加，右手不受影响）
-# +X 前伸远离机身；-Y 向中心（右）收；-Z 压低
+# +X 前伸；-Y 向中心收；-Z 压低（水平已准，主要调 Z）
 LEFT_GRASP_X_BIAS = 0.06
 LEFT_GRASP_Y_BIAS = -0.13
-LEFT_GRASP_Z_BIAS = -0.13
+LEFT_GRASP_Z_BIAS = -0.20
 
 # 预抓取 / 后撤（沿 base X：预抓取在抓取点后方 -X）
 PRE_GRASP_BACK_M = 0.10
@@ -101,8 +101,8 @@ ACTIVE_GRASP_QUAT = list(GRASP_QUAT_RIGHT)
 
 
 def _grasp_claw_hand(hand: str) -> str:
-    """--hand left 时手臂仍走左手 IK；实际闭合的是顺势就位的右手夹爪。"""
-    return "right" if hand == "left" else hand
+    """抓取侧夹爪与 --hand 一致（left 模式闭合 left_claw）。"""
+    return hand
 
 
 def _build_config_dict() -> Dict:
@@ -522,8 +522,7 @@ def run_grasp(hand: str, grasp_width: int, grasp_effort: float,
     _apply_grasp_coordinates(camera_point, hand)
 
     if hand == "left":
-        _log("[策略] --hand left：恢复左手 IK 双臂运动")
-        _log("[策略] 右手作为非抓取侧顺势就位；抓取由 right_claw 开合")
+        _log("[策略] --hand left：左手 IK 双臂运动，抓取由 left_claw 开合")
 
     if not skip_arm_mode:
         _set_arm_mode_external()
@@ -599,7 +598,7 @@ def main() -> int:
     if args.dry_coords:
         _apply_grasp_coordinates(camera_point, args.hand)
         if args.hand == "left":
-            _log("[策略] 实机 --hand left：左手 IK 运动 + right_claw 抓取")
+            _log("[策略] 实机 --hand left：左手 IK 运动 + left_claw 抓取")
         return 0
 
     _check_ros_packages()
