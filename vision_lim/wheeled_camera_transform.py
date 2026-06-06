@@ -127,30 +127,13 @@ def _symmetric_grasp_for_hand(
     grasp_ref: Tuple[float, float, float],
     hand: str,
     off: Dict,
-    cfg: Dict,
+    cfg: Optional[Dict] = None,
 ) -> Tuple[float, float, float]:
-    """
-    以右手（或共享视觉解）为参考，左手对 Y 镜像、Z 对齐待机臂高度。
-    夹爪水平由 quat 单独控制，不在此处改姿态。
-    """
+    """左手 = 右手抓取点在 Y 轴镜像，X/Z 完全一致（关节对称）。"""
     if hand != "left" or not off.get("symmetric_mirror_y", True):
         return grasp_ref
-
     gx, gy, gz = grasp_ref
-    gy = -gy
-
-    if off.get("left_grasp_z_from_inactive", True):
-        inactive = cfg.get("inactive_arm_pose", {})
-        # hand=left 时右手待机位 [0.45, -0.25, 0.12] 线路较好，Z 与其 pos 对齐
-        ref = inactive.get("right", [0.45, -0.25, 0.11988012])
-        gz = float(off.get("left_grasp_z", ref[2]))
-        # 水平夹爪相对掌心朝下时，同 pos Z 下指尖更高，需额外下调
-        gz += float(off.get("left_z_tip_offset", -0.10))
-
-    fine_x = float(off.get("left_x_fine", -0.12))
-    fine_y = float(off.get("left_y_fine", 0.0))
-    fine_z = float(off.get("left_z_fine", 0.0))
-    return (gx + fine_x, gy + fine_y, gz + fine_z)
+    return (gx, -gy, gz)
 
 
 def camera_optical_to_base_tf(

@@ -1,5 +1,4 @@
-# 轮臂 Kuavo 4 Pro：头顶相机俯视 -> IK 基座 (X前 Y左 Z上)
-# 左手：Y 镜像右手；Z 对齐 hand=left 时右手待机夹爪高度；X 略收回防碰机身
+# 轮臂 Kuavo 4 Pro：左右完全对称（左手 = 右手抓取点 Y 镜像，X/Z 相同）
 
 camera_frame: "camera_depth_optical_frame"
 ik_target_frames:
@@ -23,17 +22,10 @@ grasp_offsets:
   grasp_z_bias: 0.0
   grasp_depth_z: 0.0
   symmetric_mirror_y: true
-  left_grasp_z_from_inactive: true
-  # 相对右手待机 Z(≈0.12)：水平夹爪指尖补偿 + 总高度微调
-  left_z_tip_offset: -0.10
-  left_z_fine: -0.05
-  left_y_fine: 0.0
-  # 较视觉前向点略收回，轨迹更接近右手待机臂、减少碰机体
-  left_x_fine: -0.12
-  pre_grasp_back_m: 0.12
-  pre_grasp_lift_z: 0.02
+  pre_grasp_back_m: 0.10
+  pre_grasp_lift_z: 0.03
   retreat_back_m: 0.08
-  retreat_lift_z: 0.04
+  retreat_lift_z: 0.05
 
 end_effector_orientation:
   palm_down: [0.0, -0.70682518, 0.0, 0.70738827]
