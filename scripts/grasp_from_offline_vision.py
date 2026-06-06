@@ -68,7 +68,7 @@ PRE_GRASP_LIFT_Z = 0.03
 RETREAT_BACK_M = 0.08
 RETREAT_LIFT_Z = 0.05
 # 抓取前：先到终点正上方（纯垂直流程，跳过侧向后方预抓取）
-APPROACH_ABOVE_Z = 0.48
+APPROACH_ABOVE_Z = 0.30
 # 夹紧后垂直上提高度（沿 base +Z，与抓取点同 X/Y）
 POST_GRASP_LIFT_Z = 0.22
 # 是否执行后方预抓取（False=直接到上方，减少 workspace 越界）
