@@ -59,16 +59,15 @@ except ImportError:
             "grasp_offsets": {
                 "forward_extra_m": 0.02,
                 "depth_forward_scale": 1.0,
-                "right_y_bias": 0.02,
-                "left_y_bias": -0.22,
+                "center_y_bias": 0.02,
                 "grasp_z_bias": 0.0,
-                "left_grasp_z_bias": -0.40,
-                "right_grasp_z_bias": 0.0,
+                "symmetric_mirror_y": True,
+                "left_grasp_z_from_inactive": True,
+                "left_y_fine": 0.0,
+                "left_z_fine": 0.0,
                 "grasp_depth_z": 0.0,
                 "pre_grasp_back_m": 0.10,
                 "pre_grasp_lift_z": 0.03,
-                "left_pre_grasp_lift_z": 0.01,
-                "left_retreat_lift_z": 0.04,
                 "retreat_back_m": 0.08,
                 "retreat_lift_z": 0.05,
             },
@@ -98,33 +97,31 @@ except ImportError:
         )
 
     def resolve_grasp_poses_arm_base(point_cam, config=None, use_tf=False, hand="right"):
-        st = (config or load_wheeled_camera_config())["static_transform"]
-        off = (config or load_wheeled_camera_config()).get("grasp_offsets", {})
+        cfg = config or load_wheeled_camera_config()
+        st = cfg["static_transform"]
+        off = cfg.get("grasp_offsets", {})
         p = math.radians(float(st["pitch_deg"]))
         c, s = math.cos(p), math.sin(p)
         x_c, y_c, z_c = point_cam
         cx, cy, cz = st["camera_position_in_base"]
         lat = float(st.get("lateral_sign", -1.0))
-        x_b = cx + z_c * c + y_c * s
-        x_b += float(off.get("forward_extra_m", 0.02))
-        if hand == "right":
-            y_b = cy + lat * x_c + float(off.get("right_y_bias", 0.02))
-            z_extra = float(off.get("right_grasp_z_bias", off.get("grasp_z_bias", 0.0)))
+        x_b = cx + z_c * c + y_c * s + float(off.get("forward_extra_m", 0.02))
+        y_b = cy + lat * x_c + float(off.get("center_y_bias", 0.02))
+        z_b = cz - z_c * s + y_c * c * 0.15 + float(off.get("grasp_z_bias", 0.0))
+        grasp_ref = (x_b, y_b, z_b)
+        if hand == "left" and off.get("symmetric_mirror_y", True):
+            inactive = cfg.get("inactive_arm_pose", {})
+            ref_z = float(inactive.get("right", [0.45, -0.25, 0.11988012])[2])
+            grasp = (
+                grasp_ref[0],
+                -grasp_ref[1] + float(off.get("left_y_fine", 0.0)),
+                (ref_z if off.get("left_grasp_z_from_inactive", True) else grasp_ref[2])
+                + float(off.get("left_z_fine", 0.0)),
+            )
         else:
-            y_b = cy + lat * x_c + float(off.get("left_y_bias", -0.22))
-            z_extra = float(off.get("left_grasp_z_bias", off.get("grasp_z_bias", -0.40)))
-        z_b = cz - z_c * s + y_c * c * 0.15 + z_extra
-        grasp = (x_b, y_b, z_b)
-        pre_lift = float(
-            off.get("left_pre_grasp_lift_z", off.get("pre_grasp_lift_z", 0.03))
-            if hand == "left"
-            else off.get("pre_grasp_lift_z", 0.03)
-        )
-        ret_lift = float(
-            off.get("left_retreat_lift_z", off.get("retreat_lift_z", 0.05))
-            if hand == "left"
-            else off.get("retreat_lift_z", 0.05)
-        )
+            grasp = grasp_ref
+        pre_lift = float(off.get("pre_grasp_lift_z", 0.03))
+        ret_lift = float(off.get("retreat_lift_z", 0.05))
         pre = (
             grasp[0] - float(off.get("pre_grasp_back_m", 0.14)),
             grasp[1],
@@ -283,7 +280,8 @@ def _resolve_ik_proxy():
 
 def _solve_ik(ik_proxy, pos, hand: str):
     """
-    双臂 IK：抓取侧用水平姿态，另一侧用掌心朝下待机位姿。
+    双臂 IK：抓取侧仅改 pos_xyz + 水平 quat；非抓取侧用待机 pos + 掌心朝下。
+    关节整体角度由位置目标决定，水平夹爪四元数不参与待机侧。
     """
     import numpy as np
     from motion_capture_ik.msg import twoArmHandPoseCmd

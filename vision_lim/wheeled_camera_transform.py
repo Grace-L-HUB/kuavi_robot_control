@@ -111,20 +111,43 @@ def _apply_grasp_offsets(
 ) -> Tuple[float, float, float]:
     scale = float(off.get("depth_forward_scale", 1.0))
     cx, cy, cz = arm[0], arm[1], arm[2]
-    # 仅放大由深度带来的前向分量（相对相机位置的增量）
     forward_part = cx - float(off.get("_cam_x0", 0.12))
     gx = float(off.get("_cam_x0", 0.12)) + forward_part * scale
     gx += float(off.get("forward_extra_m", 0.0))
 
-    if hand == "right":
-        gy = cy + float(off.get("right_y_bias", 0.0))
-        z_hand = float(off.get("right_grasp_z_bias", off.get("grasp_z_bias", 0.0)))
-    else:
-        gy = cy + float(off.get("left_y_bias", 0.0))
-        z_hand = float(off.get("left_grasp_z_bias", off.get("grasp_z_bias", 0.0)))
-
-    gz = cz + float(off.get("grasp_depth_z", 0.0)) + z_hand
+    # 共享 Y/Z 偏置（居中目标，不区分左右）
+    gy = cy + float(off.get("center_y_bias", off.get("right_y_bias", 0.0)))
+    gz = cz + float(off.get("grasp_depth_z", 0.0)) + float(
+        off.get("grasp_z_bias", 0.0)
+    )
     return (gx, gy, gz)
+
+
+def _symmetric_grasp_for_hand(
+    grasp_ref: Tuple[float, float, float],
+    hand: str,
+    off: Dict,
+    cfg: Dict,
+) -> Tuple[float, float, float]:
+    """
+    以右手（或共享视觉解）为参考，左手对 Y 镜像、Z 对齐待机臂高度。
+    夹爪水平由 quat 单独控制，不在此处改姿态。
+    """
+    if hand != "left" or not off.get("symmetric_mirror_y", True):
+        return grasp_ref
+
+    gx, gy, gz = grasp_ref
+    gy = -gy
+
+    if off.get("left_grasp_z_from_inactive", True):
+        inactive = cfg.get("inactive_arm_pose", {})
+        # 左手抓时右手待机角接近理想 → 用其 Z 作为左手高度参考
+        ref = inactive.get("right", [0.45, -0.25, 0.11988012])
+        gz = float(off.get("left_grasp_z", ref[2]))
+
+    fine_y = float(off.get("left_y_fine", 0.0))
+    fine_z = float(off.get("left_z_fine", 0.0))
+    return (gx, gy + fine_y, gz + fine_z)
 
 
 def camera_optical_to_base_tf(
@@ -191,16 +214,13 @@ def resolve_grasp_poses_arm_base(
         )
         method = "static_pitch"
 
-    grasp = _apply_grasp_offsets(arm, hand, off)
+    grasp_ref = _apply_grasp_offsets(arm, hand, off)
+    grasp = _symmetric_grasp_for_hand(grasp_ref, hand, off, cfg)
 
     pre_back = float(off.get("pre_grasp_back_m", 0.14))
     ret_back = float(off.get("retreat_back_m", 0.12))
-    if hand == "left":
-        pre_lift = float(off.get("left_pre_grasp_lift_z", off.get("pre_grasp_lift_z", 0.05)))
-        ret_lift = float(off.get("left_retreat_lift_z", off.get("retreat_lift_z", 0.08)))
-    else:
-        pre_lift = float(off.get("right_pre_grasp_lift_z", off.get("pre_grasp_lift_z", 0.05)))
-        ret_lift = float(off.get("right_retreat_lift_z", off.get("retreat_lift_z", 0.08)))
+    pre_lift = float(off.get("pre_grasp_lift_z", 0.05))
+    ret_lift = float(off.get("retreat_lift_z", 0.08))
 
     # 水平抓取：预抓取在后方，沿 +X 前伸到抓取点
     pre = (grasp[0] - pre_back, grasp[1], grasp[2] + pre_lift)
