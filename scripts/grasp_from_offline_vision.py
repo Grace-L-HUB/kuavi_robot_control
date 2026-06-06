@@ -60,9 +60,9 @@ except ImportError:
                 "forward_extra_m": 0.02,
                 "depth_forward_scale": 1.0,
                 "right_y_bias": 0.02,
-                "left_y_bias": -0.02,
+                "left_y_bias": -0.12,
                 "grasp_z_bias": 0.0,
-                "left_grasp_z_bias": -0.17,
+                "left_grasp_z_bias": -0.32,
                 "right_grasp_z_bias": 0.0,
                 "grasp_depth_z": 0.0,
                 "pre_grasp_back_m": 0.10,
@@ -109,8 +109,8 @@ except ImportError:
             y_b = cy + lat * x_c + float(off.get("right_y_bias", 0.02))
             z_extra = float(off.get("right_grasp_z_bias", off.get("grasp_z_bias", 0.0)))
         else:
-            y_b = cy + lat * x_c + float(off.get("left_y_bias", -0.02))
-            z_extra = float(off.get("left_grasp_z_bias", off.get("grasp_z_bias", 0.0)))
+            y_b = cy + lat * x_c + float(off.get("left_y_bias", -0.12))
+            z_extra = float(off.get("left_grasp_z_bias", off.get("grasp_z_bias", -0.32)))
         z_b = cz - z_c * s + y_c * c * 0.15 + z_extra
         grasp = (x_b, y_b, z_b)
         pre = (

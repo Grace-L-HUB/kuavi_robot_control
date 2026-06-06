@@ -19,10 +19,10 @@ grasp_offsets:
   forward_extra_m: 0.02
   depth_forward_scale: 1.0
   right_y_bias: 0.02
-  left_y_bias: -0.02
+  left_y_bias: -0.12
   grasp_z_bias: 0.0
-  # 左手较右手再低 15~20 cm（基座 Z 向下为负）
-  left_grasp_z_bias: -0.17
+  # 左手高度偏移（基座 Z 向下为负）
+  left_grasp_z_bias: -0.32
   right_grasp_z_bias: 0.0
   grasp_depth_z: 0.0
   pre_grasp_back_m: 0.10
