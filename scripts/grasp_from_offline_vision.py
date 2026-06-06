@@ -68,7 +68,7 @@ PRE_GRASP_LIFT_Z = 0.03
 RETREAT_BACK_M = 0.08
 RETREAT_LIFT_Z = 0.05
 # 抓取前：先到终点正上方，再垂直下降（与抓取点同 X/Y）
-APPROACH_ABOVE_Z = 0.10
+APPROACH_ABOVE_Z = 0.16
 # 夹紧后垂直上提高度（沿 base +Z，与抓取点同 X/Y）
 POST_GRASP_LIFT_Z = 0.18
 
