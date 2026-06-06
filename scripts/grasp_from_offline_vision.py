@@ -60,7 +60,7 @@ OFFSET_Z = -0.12
 # +X 前伸；-Y 向中心收；-Z 压低（水平已准，主要调 Z）
 LEFT_GRASP_X_BIAS = -0.015
 LEFT_GRASP_Y_BIAS = -0.01
-LEFT_GRASP_Z_BIAS = -0.485
+LEFT_GRASP_Z_BIAS = -0.535
 
 # 预抓取 / 后撤（沿 base X：预抓取在抓取点后方 -X）
 PRE_GRASP_BACK_M = 0.10
