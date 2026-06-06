@@ -53,6 +53,12 @@ TEMP_X = -0.05
 TEMP_Y = 0.05
 OFFSET_Z = -0.12
 
+# 左手抓取微调（在官方 temp 偏置之后再叠加，右手不受影响）
+# +X 前伸远离机身；-Y 修正偏左；-Z 压低
+LEFT_GRASP_X_BIAS = 0.06
+LEFT_GRASP_Y_BIAS = -0.04
+LEFT_GRASP_Z_BIAS = -0.04
+
 # 预抓取 / 后撤（沿 base X：预抓取在抓取点后方 -X）
 PRE_GRASP_BACK_M = 0.10
 PRE_GRASP_LIFT_Z = 0.03
@@ -108,6 +114,9 @@ def _build_config_dict() -> Dict:
             "temp_x": TEMP_X,
             "temp_y": TEMP_Y,
             "offset_z": OFFSET_Z,
+            "left_grasp_x_bias": LEFT_GRASP_X_BIAS,
+            "left_grasp_y_bias": LEFT_GRASP_Y_BIAS,
+            "left_grasp_z_bias": LEFT_GRASP_Z_BIAS,
             "pre_grasp_back_m": PRE_GRASP_BACK_M,
             "pre_grasp_lift_z": PRE_GRASP_LIFT_Z,
             "retreat_back_m": RETREAT_BACK_M,
@@ -178,7 +187,10 @@ def _official_hand_grasp_pose(
     ty = float(off.get("temp_y", 0.05))
     tz = float(off.get("offset_z", -0.12))
     if hand == "left":
-        return (x + tx, y + ty, z + tz)
+        lx = float(off.get("left_grasp_x_bias", 0.0))
+        ly = float(off.get("left_grasp_y_bias", 0.0))
+        lz = float(off.get("left_grasp_z_bias", 0.0))
+        return (x + tx + lx, y + ty + ly, z + tz + lz)
     return (x + tx, y - ty, z + tz)
 
 
