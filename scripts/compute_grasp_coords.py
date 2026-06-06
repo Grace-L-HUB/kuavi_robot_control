@@ -71,8 +71,8 @@ def main() -> None:
         str(INSTANCE / "camera_info1.txt"),
     )
 
-    # 水瓶在彩色图中心（瓶盖处深度常无效，在邻域取有效深度）
-    u_c, v_c = 320, 255
+    # 水瓶：在彩色图左侧书上，取瓶身中心偏下；深度用 depth 内参邻域中值
+    u_c, v_c = 178, 298
     u_d0 = int(round(u_c + (di["cx"] - ci["cx"])))
     v_d0 = int(round(v_c + (di["cy"] - ci["cy"])))
     dmm, u_d, v_d = 0.0, u_d0, v_d0

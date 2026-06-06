@@ -37,8 +37,8 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 # =============================================================================
 
 # 相机 optical 坐标 (m)，无 grasp_target.json 时使用
-# 来自 instance 离线视觉：pixel + depth 反投影
-CAMERA_POINT_M = (-0.014, 0.033, 0.772)
+# instance 2026-06-02 新位置：color(178,298) 瓶身中心偏下，depth≈582mm
+CAMERA_POINT_M = (-0.213, 0.074, 0.582)
 
 # 相机 -> base_link 静态变换（轮臂头顶俯视）
 PITCH_DEG = 51.0
@@ -59,8 +59,8 @@ OFFSET_Z = -0.12
 # 左手抓取微调（在官方 temp 偏置之后再叠加，右手不受影响）
 # +X 前伸远离机身；-Y 向中心（右）收；-Z 压低
 LEFT_GRASP_X_BIAS = 0.06
-LEFT_GRASP_Y_BIAS = -0.08
-LEFT_GRASP_Z_BIAS = -0.08
+LEFT_GRASP_Y_BIAS = -0.13
+LEFT_GRASP_Z_BIAS = -0.13
 
 # 预抓取 / 后撤（沿 base X：预抓取在抓取点后方 -X）
 PRE_GRASP_BACK_M = 0.10
