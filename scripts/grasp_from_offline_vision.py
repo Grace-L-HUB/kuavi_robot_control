@@ -60,7 +60,7 @@ OFFSET_Z = -0.12
 # +X 前伸；-Y 向中心收；-Z 压低（水平已准，主要调 Z）
 LEFT_GRASP_X_BIAS = -0.015
 LEFT_GRASP_Y_BIAS = -0.01
-LEFT_GRASP_Z_BIAS = -0.50
+LEFT_GRASP_Z_BIAS = -0.545
 
 # 预抓取 / 后撤（沿 base X：预抓取在抓取点后方 -X）
 PRE_GRASP_BACK_M = 0.10
@@ -69,7 +69,7 @@ RETREAT_BACK_M = 0.08
 RETREAT_LIFT_Z = 0.05
 # 抓取前：先到终点正上方（纯垂直流程，跳过侧向后方预抓取）
 # 优先用 APPROACH_ABOVE_Z_TARGET（base 绝对高度）；为 None 时用相对偏移 APPROACH_ABOVE_Z
-APPROACH_ABOVE_Z_TARGET = -0.1
+APPROACH_ABOVE_Z_TARGET = -0.145
 APPROACH_ABOVE_Z = 0.30
 # 夹紧后垂直上提高度（沿 base +Z，与抓取点同 X/Y）
 POST_GRASP_LIFT_Z = 0.22
