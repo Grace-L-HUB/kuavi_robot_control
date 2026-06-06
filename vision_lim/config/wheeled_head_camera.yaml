@@ -26,7 +26,7 @@ grasp_offsets:
   symmetric_mirror_y: true
   left_grasp_z_from_inactive: true
   left_y_fine: 0.0
-  left_z_fine: 0.0
+  left_z_fine: -0.18
   pre_grasp_back_m: 0.10
   pre_grasp_lift_z: 0.03
   retreat_back_m: 0.08

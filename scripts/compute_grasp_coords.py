@@ -119,7 +119,7 @@ def main() -> None:
             "symmetric_mirror_y": True,
             "left_grasp_z_from_inactive": True,
             "left_y_fine": 0.0,
-            "left_z_fine": 0.0,
+            "left_z_fine": -0.18,
             "grasp_depth_z": 0.0,
             "pre_grasp_back_m": 0.10,
             "pre_grasp_lift_z": 0.03,
