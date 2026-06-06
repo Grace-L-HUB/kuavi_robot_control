@@ -60,17 +60,19 @@ OFFSET_Z = -0.12
 # +X 前伸；-Y 向中心收；-Z 压低（水平已准，主要调 Z）
 LEFT_GRASP_X_BIAS = -0.015
 LEFT_GRASP_Y_BIAS = -0.01
-LEFT_GRASP_Z_BIAS = -0.535
+LEFT_GRASP_Z_BIAS = -0.50
 
 # 预抓取 / 后撤（沿 base X：预抓取在抓取点后方 -X）
 PRE_GRASP_BACK_M = 0.10
 PRE_GRASP_LIFT_Z = 0.03
 RETREAT_BACK_M = 0.08
 RETREAT_LIFT_Z = 0.05
-# 抓取前：先到终点正上方，再垂直下降（与抓取点同 X/Y）
-APPROACH_ABOVE_Z = 0.16
+# 抓取前：先到终点正上方（纯垂直流程，跳过侧向后方预抓取）
+APPROACH_ABOVE_Z = 0.28
 # 夹紧后垂直上提高度（沿 base +Z，与抓取点同 X/Y）
-POST_GRASP_LIFT_Z = 0.18
+POST_GRASP_LIFT_Z = 0.22
+# 是否执行后方预抓取（False=直接到上方，减少 workspace 越界）
+USE_PRE_GRASP = False
 
 # 姿态 quat_xyzw（相对 IK 基座）
 PALM_DOWN_QUAT = [0.0, -0.70682518, 0.0, 0.70738827]
@@ -541,6 +543,7 @@ def run_grasp(hand: str, grasp_width: int, grasp_effort: float,
 
     if hand == "left":
         _log("[策略] --hand left：左手 IK 双臂运动，抓取由 left_claw 开合")
+    _log("[策略] 垂直流程：上方就位 → 下降抓取 → 闭合 → 向上提起 → 后撤")
 
     if not skip_arm_mode:
         _set_arm_mode_external()
@@ -565,18 +568,19 @@ def run_grasp(hand: str, grasp_width: int, grasp_effort: float,
         _claw_cmd(claw_hand, 0)
         rospy.sleep(0.8)
 
-    if not _move_to(ik_proxy, arm_pub, PRE_GRASP, hand, 2.0, "后方就位", use_target_poses):
+    if USE_PRE_GRASP:
+        if not _move_to(ik_proxy, arm_pub, PRE_GRASP, hand, 2.0, "后方就位", use_target_poses):
+            return False
+    if not _move_to(ik_proxy, arm_pub, APPROACH_ABOVE, hand, 3.5, "上方就位", use_target_poses):
         return False
-    if not _move_to(ik_proxy, arm_pub, APPROACH_ABOVE, hand, 2.5, "上方就位", use_target_poses):
-        return False
-    if not _move_to(ik_proxy, arm_pub, GRASP_POS, hand, 2.5, "下降抓取", use_target_poses):
+    if not _move_to(ik_proxy, arm_pub, GRASP_POS, hand, 3.5, "下降抓取", use_target_poses):
         return False
 
     if not skip_gripper:
         _claw_cmd(claw_hand, grasp_width, effort=grasp_effort)
         rospy.sleep(1.5)
 
-    if not _move_to(ik_proxy, arm_pub, LIFT_POS, hand, 3.5, "向上提起", use_target_poses):
+    if not _move_to(ik_proxy, arm_pub, LIFT_POS, hand, 4.0, "向上提起", use_target_poses):
         return False
 
     if not _move_to(ik_proxy, arm_pub, RETREAT, hand, 2.0, "后撤", use_target_poses):
