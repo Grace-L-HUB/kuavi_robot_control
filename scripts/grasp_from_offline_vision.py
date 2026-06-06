@@ -68,7 +68,7 @@ PRE_GRASP_LIFT_Z = 0.03
 RETREAT_BACK_M = 0.08
 RETREAT_LIFT_Z = 0.05
 # 夹紧后垂直上提高度（沿 base +Z，与抓取点同 X/Y）
-POST_GRASP_LIFT_Z = 0.08
+POST_GRASP_LIFT_Z = 0.18
 
 # 姿态 quat_xyzw（相对 IK 基座）
 PALM_DOWN_QUAT = [0.0, -0.70682518, 0.0, 0.70738827]
@@ -565,7 +565,7 @@ def run_grasp(hand: str, grasp_width: int, grasp_effort: float,
         _claw_cmd(claw_hand, grasp_width, effort=grasp_effort)
         rospy.sleep(1.5)
 
-    if not _move_to(ik_proxy, arm_pub, LIFT_POS, hand, 2.5, "向上提起", use_target_poses):
+    if not _move_to(ik_proxy, arm_pub, LIFT_POS, hand, 3.5, "向上提起", use_target_poses):
         return False
 
     if not _move_to(ik_proxy, arm_pub, RETREAT, hand, 2.0, "后撤", use_target_poses):
