@@ -63,13 +63,15 @@ except ImportError:
                 "grasp_z_bias": 0.0,
                 "symmetric_mirror_y": True,
                 "left_grasp_z_from_inactive": True,
+                "left_z_tip_offset": -0.10,
+                "left_z_fine": -0.05,
                 "left_y_fine": 0.0,
-                "left_z_fine": -0.18,
+                "left_x_fine": -0.12,
                 "grasp_depth_z": 0.0,
-                "pre_grasp_back_m": 0.10,
-                "pre_grasp_lift_z": 0.03,
+                "pre_grasp_back_m": 0.12,
+                "pre_grasp_lift_z": 0.02,
                 "retreat_back_m": 0.08,
-                "retreat_lift_z": 0.05,
+                "retreat_lift_z": 0.04,
             },
             "end_effector_orientation": {
                 "palm_down": [0.0, -0.70682518, 0.0, 0.70738827],
@@ -111,17 +113,19 @@ except ImportError:
         grasp_ref = (x_b, y_b, z_b)
         if hand == "left" and off.get("symmetric_mirror_y", True):
             inactive = cfg.get("inactive_arm_pose", {})
-            ref_z = float(inactive.get("right", [0.45, -0.25, 0.11988012])[2])
+            ref = inactive.get("right", [0.45, -0.25, 0.11988012])
+            ref_z = float(ref[2])
+            ref_z += float(off.get("left_z_tip_offset", -0.10))
+            ref_z += float(off.get("left_z_fine", -0.05))
             grasp = (
-                grasp_ref[0],
+                grasp_ref[0] + float(off.get("left_x_fine", -0.12)),
                 -grasp_ref[1] + float(off.get("left_y_fine", 0.0)),
-                (ref_z if off.get("left_grasp_z_from_inactive", True) else grasp_ref[2])
-                + float(off.get("left_z_fine", 0.0)),
+                ref_z if off.get("left_grasp_z_from_inactive", True) else grasp_ref[2],
             )
         else:
             grasp = grasp_ref
-        pre_lift = float(off.get("pre_grasp_lift_z", 0.03))
-        ret_lift = float(off.get("retreat_lift_z", 0.05))
+        pre_lift = float(off.get("pre_grasp_lift_z", 0.02))
+        ret_lift = float(off.get("retreat_lift_z", 0.04))
         pre = (
             grasp[0] - float(off.get("pre_grasp_back_m", 0.14)),
             grasp[1],

@@ -141,13 +141,16 @@ def _symmetric_grasp_for_hand(
 
     if off.get("left_grasp_z_from_inactive", True):
         inactive = cfg.get("inactive_arm_pose", {})
-        # 左手抓时右手待机角接近理想 → 用其 Z 作为左手高度参考
+        # hand=left 时右手待机位 [0.45, -0.25, 0.12] 线路较好，Z 与其 pos 对齐
         ref = inactive.get("right", [0.45, -0.25, 0.11988012])
         gz = float(off.get("left_grasp_z", ref[2]))
+        # 水平夹爪相对掌心朝下时，同 pos Z 下指尖更高，需额外下调
+        gz += float(off.get("left_z_tip_offset", -0.10))
 
+    fine_x = float(off.get("left_x_fine", -0.12))
     fine_y = float(off.get("left_y_fine", 0.0))
     fine_z = float(off.get("left_z_fine", 0.0))
-    return (gx, gy + fine_y, gz + fine_z)
+    return (gx + fine_x, gy + fine_y, gz + fine_z)
 
 
 def camera_optical_to_base_tf(
