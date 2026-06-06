@@ -19,19 +19,20 @@ grasp_offsets:
   forward_extra_m: 0.02
   depth_forward_scale: 1.0
   right_y_bias: 0.02
-  left_y_bias: -0.12
+  # 左手向机体中心（Y 负向=右）再靠近约 10 cm
+  left_y_bias: -0.22
   grasp_z_bias: 0.0
-  # 左手高度偏移（基座 Z 向下为负）
-  left_grasp_z_bias: -0.32
+  # 左手再压低 ~8 cm，补偿腕部关节角导致夹爪偏高
+  left_grasp_z_bias: -0.40
   right_grasp_z_bias: 0.0
   grasp_depth_z: 0.0
   pre_grasp_back_m: 0.10
   pre_grasp_lift_z: 0.03
+  left_pre_grasp_lift_z: 0.01
+  left_retreat_lift_z: 0.04
   retreat_back_m: 0.08
   retreat_lift_z: 0.05
 
-# 水平抓取 quat_xyzw（相对 IK 基座）
-# 垂直错误姿态 z 分量为 +0.5；水平应为 -0.5（与右手对称）
 end_effector_orientation:
   palm_down: [0.0, -0.70682518, 0.0, 0.70738827]
   right:

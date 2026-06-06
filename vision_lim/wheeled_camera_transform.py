@@ -194,9 +194,13 @@ def resolve_grasp_poses_arm_base(
     grasp = _apply_grasp_offsets(arm, hand, off)
 
     pre_back = float(off.get("pre_grasp_back_m", 0.14))
-    pre_lift = float(off.get("pre_grasp_lift_z", 0.05))
     ret_back = float(off.get("retreat_back_m", 0.12))
-    ret_lift = float(off.get("retreat_lift_z", 0.08))
+    if hand == "left":
+        pre_lift = float(off.get("left_pre_grasp_lift_z", off.get("pre_grasp_lift_z", 0.05)))
+        ret_lift = float(off.get("left_retreat_lift_z", off.get("retreat_lift_z", 0.08)))
+    else:
+        pre_lift = float(off.get("right_pre_grasp_lift_z", off.get("pre_grasp_lift_z", 0.05)))
+        ret_lift = float(off.get("right_retreat_lift_z", off.get("retreat_lift_z", 0.08)))
 
     # 水平抓取：预抓取在后方，沿 +X 前伸到抓取点
     pre = (grasp[0] - pre_back, grasp[1], grasp[2] + pre_lift)

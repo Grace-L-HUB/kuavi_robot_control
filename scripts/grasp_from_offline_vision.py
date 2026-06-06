@@ -60,13 +60,15 @@ except ImportError:
                 "forward_extra_m": 0.02,
                 "depth_forward_scale": 1.0,
                 "right_y_bias": 0.02,
-                "left_y_bias": -0.12,
+                "left_y_bias": -0.22,
                 "grasp_z_bias": 0.0,
-                "left_grasp_z_bias": -0.32,
+                "left_grasp_z_bias": -0.40,
                 "right_grasp_z_bias": 0.0,
                 "grasp_depth_z": 0.0,
                 "pre_grasp_back_m": 0.10,
                 "pre_grasp_lift_z": 0.03,
+                "left_pre_grasp_lift_z": 0.01,
+                "left_retreat_lift_z": 0.04,
                 "retreat_back_m": 0.08,
                 "retreat_lift_z": 0.05,
             },
@@ -109,19 +111,29 @@ except ImportError:
             y_b = cy + lat * x_c + float(off.get("right_y_bias", 0.02))
             z_extra = float(off.get("right_grasp_z_bias", off.get("grasp_z_bias", 0.0)))
         else:
-            y_b = cy + lat * x_c + float(off.get("left_y_bias", -0.12))
-            z_extra = float(off.get("left_grasp_z_bias", off.get("grasp_z_bias", -0.32)))
+            y_b = cy + lat * x_c + float(off.get("left_y_bias", -0.22))
+            z_extra = float(off.get("left_grasp_z_bias", off.get("grasp_z_bias", -0.40)))
         z_b = cz - z_c * s + y_c * c * 0.15 + z_extra
         grasp = (x_b, y_b, z_b)
+        pre_lift = float(
+            off.get("left_pre_grasp_lift_z", off.get("pre_grasp_lift_z", 0.03))
+            if hand == "left"
+            else off.get("pre_grasp_lift_z", 0.03)
+        )
+        ret_lift = float(
+            off.get("left_retreat_lift_z", off.get("retreat_lift_z", 0.05))
+            if hand == "left"
+            else off.get("retreat_lift_z", 0.05)
+        )
         pre = (
             grasp[0] - float(off.get("pre_grasp_back_m", 0.14)),
             grasp[1],
-            grasp[2] + float(off.get("pre_grasp_lift_z", 0.05)),
+            grasp[2] + pre_lift,
         )
         retreat = (
             grasp[0] - float(off.get("retreat_back_m", 0.12)),
             grasp[1],
-            grasp[2] + float(off.get("retreat_lift_z", 0.08)),
+            grasp[2] + ret_lift,
         )
         return {
             "camera_coord_m": list(point_cam),
