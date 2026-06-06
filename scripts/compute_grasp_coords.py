@@ -114,9 +114,11 @@ def main() -> None:
         "grasp_offsets": {
             "forward_extra_m": 0.02,
             "depth_forward_scale": 1.0,
-            "center_y_bias": 0.02,
+            "center_y_bias": 0.0,
             "grasp_z_bias": 0.0,
-            "symmetric_mirror_y": True,
+            "temp_x": -0.05,
+            "temp_y": 0.05,
+            "offset_z": -0.12,
             "grasp_depth_z": 0.0,
             "pre_grasp_back_m": 0.10,
             "pre_grasp_lift_z": 0.03,

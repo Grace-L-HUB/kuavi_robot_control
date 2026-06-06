@@ -14,11 +14,11 @@
     0.772
   ],
   "arm_coord_m": [
-    0.6185,
-    0.034,
-    0.0131
+    0.5685,
+    -0.036,
+    -0.1069
   ],
-  "transform_method": "static_pitch",
+  "transform_method": "static_pitch_official_hand",
   "static_transform": {
     "pitch_deg": 51.0,
     "camera_position_in_base": [
@@ -33,9 +33,11 @@
   "grasp_offsets": {
     "forward_extra_m": 0.02,
     "depth_forward_scale": 1.0,
-    "right_y_bias": 0.02,
-    "left_y_bias": -0.02,
+    "center_y_bias": 0.0,
     "grasp_z_bias": 0.0,
+    "temp_x": -0.05,
+    "temp_y": 0.05,
+    "offset_z": -0.12,
     "grasp_depth_z": 0.0,
     "pre_grasp_back_m": 0.1,
     "pre_grasp_lift_z": 0.03,
@@ -62,19 +64,19 @@
   },
   "grasp_plan": {
     "pre_grasp": [
-      0.5185,
-      0.034,
-      0.0431
+      0.4685,
+      -0.036,
+      -0.0769
     ],
     "grasp": [
-      0.6185,
-      0.034,
-      0.0131
+      0.5685,
+      -0.036,
+      -0.1069
     ],
     "retreat": [
-      0.5385,
-      0.034,
-      0.0631
+      0.4885,
+      -0.036,
+      -0.0569
     ]
   },
   "grasp_quat_xyzw": [

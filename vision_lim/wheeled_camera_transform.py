@@ -104,36 +104,37 @@ def camera_optical_to_base_static(
     return (x_b, y_b, z_b)
 
 
-def _apply_grasp_offsets(
+def _vision_base_target(
     arm: Tuple[float, float, float],
-    hand: str,
     off: Dict,
 ) -> Tuple[float, float, float]:
+    """视觉/static 变换得到的居中目标点（尚未分左/右手）。"""
     scale = float(off.get("depth_forward_scale", 1.0))
     cx, cy, cz = arm[0], arm[1], arm[2]
     forward_part = cx - float(off.get("_cam_x0", 0.12))
     gx = float(off.get("_cam_x0", 0.12)) + forward_part * scale
     gx += float(off.get("forward_extra_m", 0.0))
-
-    # 共享 Y/Z 偏置（居中目标，不区分左右）
-    gy = cy + float(off.get("center_y_bias", off.get("right_y_bias", 0.0)))
-    gz = cz + float(off.get("grasp_depth_z", 0.0)) + float(
-        off.get("grasp_z_bias", 0.0)
-    )
+    gy = cy + float(off.get("center_y_bias", 0.0))
+    gz = cz + float(off.get("grasp_depth_z", 0.0)) + float(off.get("grasp_z_bias", 0.0))
     return (gx, gy, gz)
 
 
-def _symmetric_grasp_for_hand(
-    grasp_ref: Tuple[float, float, float],
+def _official_hand_grasp_pose(
+    base: Tuple[float, float, float],
     hand: str,
     off: Dict,
-    cfg: Optional[Dict] = None,
 ) -> Tuple[float, float, float]:
-    """左手 = 右手抓取点在 Y 轴镜像，X/Z 完全一致（关节对称）。"""
-    if hand != "left" or not off.get("symmetric_mirror_y", True):
-        return grasp_ref
-    gx, gy, gz = grasp_ref
-    return (gx, -gy, gz)
+    """
+    官方 apriltag/水瓶抓取：同一目标点，temp_x 负向，offset_z 负向（偏下），
+    Y 方向 temp_y 左加右减（interface 案例文档）。
+    """
+    x, y, z = base
+    tx = float(off.get("temp_x", off.get("temp_x_l", -0.05)))
+    ty = float(off.get("temp_y", off.get("temp_y_l", 0.05)))
+    tz = float(off.get("offset_z", -0.10))
+    if hand == "left":
+        return (x + tx, y + ty, z + tz)
+    return (x + tx, y - ty, z + tz)
 
 
 def camera_optical_to_base_tf(
@@ -200,8 +201,9 @@ def resolve_grasp_poses_arm_base(
         )
         method = "static_pitch"
 
-    grasp_ref = _apply_grasp_offsets(arm, hand, off)
-    grasp = _symmetric_grasp_for_hand(grasp_ref, hand, off, cfg)
+    base = _vision_base_target(arm, off)
+    grasp = _official_hand_grasp_pose(base, hand, off)
+    method = f"{method}_official_hand"
 
     pre_back = float(off.get("pre_grasp_back_m", 0.14))
     ret_back = float(off.get("retreat_back_m", 0.12))
@@ -214,6 +216,7 @@ def resolve_grasp_poses_arm_base(
 
     return {
         "camera_coord_m": list(point_cam),
+        "base_target_m": list(base),
         "arm_coord_m": list(grasp),
         "pre_grasp": list(pre),
         "grasp": list(grasp),

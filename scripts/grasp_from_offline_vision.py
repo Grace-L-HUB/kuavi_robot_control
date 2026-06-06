@@ -59,9 +59,11 @@ except ImportError:
             "grasp_offsets": {
                 "forward_extra_m": 0.02,
                 "depth_forward_scale": 1.0,
-                "center_y_bias": 0.02,
+                "center_y_bias": 0.0,
                 "grasp_z_bias": 0.0,
-                "symmetric_mirror_y": True,
+                "temp_x": -0.05,
+                "temp_y": 0.05,
+                "offset_z": -0.12,
                 "grasp_depth_z": 0.0,
                 "pre_grasp_back_m": 0.10,
                 "pre_grasp_lift_z": 0.03,
@@ -103,13 +105,16 @@ except ImportError:
         cx, cy, cz = st["camera_position_in_base"]
         lat = float(st.get("lateral_sign", -1.0))
         x_b = cx + z_c * c + y_c * s + float(off.get("forward_extra_m", 0.02))
-        y_b = cy + lat * x_c + float(off.get("center_y_bias", 0.02))
+        y_b = cy + lat * x_c + float(off.get("center_y_bias", 0.0))
         z_b = cz - z_c * s + y_c * c * 0.15 + float(off.get("grasp_z_bias", 0.0))
-        grasp_ref = (x_b, y_b, z_b)
-        if hand == "left" and off.get("symmetric_mirror_y", True):
-            grasp = (grasp_ref[0], -grasp_ref[1], grasp_ref[2])
+        base = (x_b, y_b, z_b)
+        tx = float(off.get("temp_x", -0.05))
+        ty = float(off.get("temp_y", 0.05))
+        tz = float(off.get("offset_z", -0.12))
+        if hand == "left":
+            grasp = (base[0] + tx, base[1] + ty, base[2] + tz)
         else:
-            grasp = grasp_ref
+            grasp = (base[0] + tx, base[1] - ty, base[2] + tz)
         pre_lift = float(off.get("pre_grasp_lift_z", 0.03))
         ret_lift = float(off.get("retreat_lift_z", 0.05))
         pre = (
@@ -465,14 +470,14 @@ def _apply_grasp_coordinates(
     else:
         INACTIVE_RIGHT_POS = list(inact)
 
-    _log(f"[坐标] 相机 optical (m): {camera_point}")
+    _log(f"[坐标] 视觉中心 (m): {poses.get('base_target_m', camera_point)}")
     _log(f"[坐标] 变换: {poses['transform_method']}")
     _log(f"[坐标] 水平抓取点 (m): {GRASP_POS}")
     _log(f"[坐标] 预抓取(后方就位, -X): {PRE_GRASP}")
     _log(f"[坐标] 后撤 (m): {RETREAT}")
     _log(f"[姿态] 抓取侧水平 quat_xyzw: {ACTIVE_GRASP_QUAT}")
     _log("[坐标] 微调: vision_lim/config/wheeled_head_camera.yaml "
-         "(forward_extra_m / right_y_bias / quat)")
+         "(temp_x / temp_y / offset_z / quat)")
 
 
 def run_grasp(hand: str, grasp_width: int, grasp_effort: float,
