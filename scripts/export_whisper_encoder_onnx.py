@@ -19,6 +19,12 @@ def main() -> int:
         default=str(OUT_DIR / "whisper_encoder.onnx"),
         help="输出 ONNX 路径",
     )
+    parser.add_argument(
+        "--opset",
+        type=int,
+        default=14,
+        help="ONNX opset（Whisper 含 scaled_dot_product_attention，至少 14）",
+    )
     args = parser.parse_args()
 
     try:
@@ -48,10 +54,12 @@ def main() -> int:
         str(out_path),
         input_names=["mel"],
         output_names=["audio_features"],
-        opset_version=12,
+        opset_version=args.opset,
         dynamic_axes=None,
+        do_constant_folding=True,
     )
     print(f"[OK] encoder ONNX: {out_path}")
+    print(f"     opset: {args.opset}")
     print(f"     input shape: (1, {n_mels}, {mel_frames})  (ATC: mel:1,{n_mels},{mel_frames})")
     print(f"     encoder output ctx: {model.dims.n_audio_ctx}")
     print("下一步在 Atlas 上运行: bash scripts/convert_whisper_encoder_to_om.sh")
