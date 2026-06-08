@@ -7,13 +7,8 @@ Atlas 200I 离线流水线（无 ROS）：
   → 写入 grasp_target.json（供 grasp_from_offline_vision.py 使用）
 
 【Atlas NPU 运行示例】
-  source /usr/local/Ascend/ascend-toolkit/set_env.sh
-  source ~/kuavi/bin/activate
   cd ~/kuavi_robot_control
-  export PYTHONPATH=$PWD
-  bash scripts/setup_atlas_npu.sh          # 检查环境
-  bash scripts/convert_yolo_to_om.sh       # 首次：生成 yolov8n.om
-  # Whisper encoder ONNX 在 PC 导出，OM 在板端 convert_whisper_encoder_to_om.sh
+  source scripts/activate_kuavi_atlas.sh   # 必须：kuavi + CANN + acl
 
   python3 scripts/atlas_voice_grasp_pipeline.py \\
     --asr-config config/asr_atlas_npu.yaml \\
@@ -281,6 +276,19 @@ def main() -> int:
         help="跳过 Whisper，直接用该中文指令测 NLU+视觉",
     )
     args = parser.parse_args()
+
+    use_npu = args.device in ("npu", "auto") or (
+        args.asr_config and "atlas_npu" in str(args.asr_config)
+    )
+    if use_npu:
+        from vision_lim.ascend import is_ascend_available
+
+        if not is_ascend_available():
+            _log(
+                "[错误] NPU 模式需要 acl 模块。请先执行:\n"
+                "       source scripts/activate_kuavi_atlas.sh"
+            )
+            return 1
 
     try:
         run_pipeline(

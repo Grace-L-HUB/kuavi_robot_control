@@ -59,8 +59,11 @@ class AscendOmBackend(ASRBackend):
     def _ensure_encoder_om(self) -> OmModel:
         if not is_ascend_available():
             raise RuntimeError(
-                "未检测到 acl 模块。请先执行:\n"
-                "  source /usr/local/Ascend/ascend-toolkit/set_env.sh"
+                "未检测到 acl 模块（NPU 不可用）。请先执行:\n"
+                "  source scripts/activate_kuavi_atlas.sh\n"
+                "或:\n"
+                "  source /usr/local/Ascend/ascend-toolkit/set_env.sh\n"
+                "  export PYTHONPATH=/usr/local/Ascend/ascend-toolkit/latest/python/site-packages:$PYTHONPATH"
             )
         if not Path(self.encoder_om_path).is_file():
             raise FileNotFoundError(

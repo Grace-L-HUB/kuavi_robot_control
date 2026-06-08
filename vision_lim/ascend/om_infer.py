@@ -15,7 +15,36 @@ _acl_initialized = False
 _device_runtime: Dict[int, Dict] = {}
 
 
+def _bootstrap_cann_pythonpath() -> None:
+    """kuavi venv 下 import acl 失败时，自动追加 CANN site-packages。"""
+    import os
+    import sys
+
+    candidates = []
+    home = os.environ.get("ASCEND_TOOLKIT_HOME")
+    if home:
+        candidates.append(os.path.join(home, "python", "site-packages"))
+        candidates.append(
+            os.path.join(home, "opp", "built-in", "op_impl", "ai_core", "tbe")
+        )
+    candidates.append("/usr/local/Ascend/ascend-toolkit/latest/python/site-packages")
+    candidates.append(
+        "/usr/local/Ascend/ascend-toolkit/latest/opp/built-in/op_impl/ai_core/tbe"
+    )
+
+    for p in candidates:
+        if p and os.path.isdir(p) and p not in sys.path:
+            sys.path.insert(0, p)
+
+
 def is_ascend_available() -> bool:
+    """当前 Python 环境是否可 import acl（需 CANN 在 PYTHONPATH 中）。"""
+    try:
+        import acl  # noqa: F401
+        return True
+    except ImportError:
+        pass
+    _bootstrap_cann_pythonpath()
     try:
         import acl  # noqa: F401
         return True
