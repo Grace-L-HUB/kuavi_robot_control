@@ -32,13 +32,10 @@ else
   echo "    已存在 $MODELS/yolov8n.onnx，跳过导出"
 fi
 
-echo "==> [2/3] 加载 CANN 环境"
-if [[ -f /usr/local/Ascend/ascend-toolkit/set_env.sh ]]; then
-  # shellcheck disable=SC1091
-  source /usr/local/Ascend/ascend-toolkit/set_env.sh
-else
-  echo "警告: 未找到 set_env.sh，请手动 source CANN 环境"
-fi
+echo "==> [2/3] 加载 CANN 环境并检查 NumPy（CANN 要求 numpy 1.26，不支持 2.x）"
+# shellcheck disable=SC1091
+source "$(dirname "$0")/atc_prepare_env.sh"
+_atc_prepare_env
 
 echo "==> [3/3] ATC: ONNX → OM (soc=$SOC)"
 atc --model="$MODELS/yolov8n.onnx" \

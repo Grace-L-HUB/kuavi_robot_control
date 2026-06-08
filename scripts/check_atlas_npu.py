@@ -23,7 +23,12 @@ def main() -> int:
     print("YOLO NPU 就绪:", can_use_yolo_npu(str(yolo_om)))
 
     if not is_ascend_available():
-        print("\n提示: source /usr/local/Ascend/ascend-toolkit/set_env.sh")
+        print("\n提示: acl 在 kuavi venv 中不可见，常见原因是 venv 覆盖了 CANN 的 PYTHONPATH")
+        print("  请执行: source scripts/activate_kuavi_atlas.sh")
+        print("  或手动查找 acl 路径:")
+        print("    find /usr/local/Ascend/ascend-toolkit -type d -name acl 2>/dev/null | head -3")
+        print("    export PYTHONPATH=<上式输出的父目录>:$PYTHONPATH")
+        print("    python3 -c \"import acl; print('acl OK')\"")
     if not yolo_om.is_file():
         print("提示: bash scripts/convert_yolo_to_om.sh")
     if not whisper_om.is_file():

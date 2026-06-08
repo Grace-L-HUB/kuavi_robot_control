@@ -82,10 +82,12 @@ class AscendOmBackend(ASRBackend):
         model = self._ensure_whisper_cpu()
         om = self._ensure_encoder_om()
 
+        from whisper.audio import N_FRAMES
+
         audio = whisper.load_audio(path)
         audio = whisper.pad_or_trim(audio)
         mel = whisper.log_mel_spectrogram(audio, n_mels=model.dims.n_mels)
-        mel = whisper.pad_or_trim(mel, model.dims.n_audio_ctx)
+        mel = whisper.pad_or_trim(mel, N_FRAMES)
         mel_batch = mel.unsqueeze(0).numpy().astype(np.float32)
 
         features_np = om.infer([mel_batch])[0]
@@ -105,7 +107,7 @@ class AscendOmBackend(ASRBackend):
 
         lang = self.language if self.language else None
         options = DecodingOptions(language=lang)
-        result = decode(model, mel.unsqueeze(0), options)
+        result = decode(model, mel, options)
         text = (result.text or "").strip()
         logger.info("Ascend Whisper (encoder NPU): %r", text)
         return text

@@ -28,10 +28,16 @@ def main() -> int:
         print("需要: pip install openai-whisper torch", file=sys.stderr)
         return 1
 
+    from whisper.audio import N_FRAMES
+
     model = whisper.load_model(args.model_size, device="cpu")
     n_mels = model.dims.n_mels
-    n_ctx = model.dims.n_audio_ctx
-    dummy = torch.randn(1, n_mels, n_ctx, dtype=torch.float32)
+    # Encoder 输入 mel 时间维为 N_FRAMES(3000)，非 n_audio_ctx(1500)。
+    # conv2 stride=2 后才是 n_audio_ctx 帧，与 positional_embedding 对齐。
+    mel_frames = N_FRAMES
+    dummy = torch.randn(1, n_mels, mel_frames, dtype=torch.float32)
+    with torch.no_grad():
+        model.encoder(dummy)  # 导出前校验 shape
 
     out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -46,7 +52,8 @@ def main() -> int:
         dynamic_axes=None,
     )
     print(f"[OK] encoder ONNX: {out_path}")
-    print(f"     input shape: (1, {n_mels}, {n_ctx})")
+    print(f"     input shape: (1, {n_mels}, {mel_frames})  (ATC: mel:1,{n_mels},{mel_frames})")
+    print(f"     encoder output ctx: {model.dims.n_audio_ctx}")
     print("下一步在 Atlas 上运行: bash scripts/convert_whisper_encoder_to_om.sh")
     return 0
 

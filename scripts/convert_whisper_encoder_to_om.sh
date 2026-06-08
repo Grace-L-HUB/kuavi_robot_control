@@ -15,15 +15,14 @@ if [[ ! -f "$ONNX" ]]; then
   exit 1
 fi
 
-# 读取 tiny 默认 n_audio_ctx=1500, n_mels=80
+# Encoder 输入 mel 时间维 = N_FRAMES(3000)，不是 n_audio_ctx(1500)
 N_MELS="${WHISPER_N_MELS:-80}"
-N_CTX="${WHISPER_N_CTX:-1500}"
-INPUT_SHAPE="mel:1,${N_MELS},${N_CTX}"
+N_FRAMES="${WHISPER_N_FRAMES:-3000}"
+INPUT_SHAPE="mel:1,${N_MELS},${N_FRAMES}"
 
-if [[ -f /usr/local/Ascend/ascend-toolkit/set_env.sh ]]; then
-  # shellcheck disable=SC1091
-  source /usr/local/Ascend/ascend-toolkit/set_env.sh
-fi
+# shellcheck disable=SC1091
+source "$(dirname "$0")/atc_prepare_env.sh"
+_atc_prepare_env
 
 echo "==> ATC Whisper encoder (soc=$SOC, input=$INPUT_SHAPE)"
 atc --model="$ONNX" \
