@@ -11,10 +11,8 @@ if [[ -f /usr/local/Ascend/ascend-toolkit/set_env.sh ]]; then
 fi
 
 echo "==> 当前 python3: $(which python3) $(python3 --version 2>&1)"
-
-# root 用户不加 --user；NumPy 用 1.26.x（CANN 不支持 2.x，见 MindSDK FAQ）
-echo "==> 安装 ATC/TBE 依赖（decorator、scipy、psutil 等）"
-pip3 install \
+echo "==> 使用 python3 -m pip 安装到同一解释器（避免 pip3 装到别的 Python 版本）"
+python3 -m pip install \
   numpy==1.26.4 \
   decorator \
   attrs \

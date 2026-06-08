@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -12,7 +12,9 @@ logger = logging.getLogger(__name__)
 
 _acl = None
 _acl_initialized = False
-_acl_device_id: Optional[int] = None
+
+# 同一 device 共享 Context/Stream（官方要求 load/execute 在同一 Context）
+_device_runtime: Dict[int, Dict] = {}
 
 
 def is_ascend_available() -> bool:
@@ -29,19 +31,41 @@ def _check_ret(msg: str, ret: int) -> None:
         raise RuntimeError(f"{msg} failed, ret={ret}")
 
 
-def _ensure_acl(device_id: int) -> None:
-    global _acl, _acl_initialized, _acl_device_id
+def _ensure_acl() -> None:
+    global _acl, _acl_initialized
     import acl as acl_mod
 
     _acl = acl_mod
     if not _acl_initialized:
         _check_ret("acl.init", _acl.init())
         _acl_initialized = True
-    if _acl_device_id != device_id:
-        if _acl_device_id is not None:
-            _acl.rt.reset_device(_acl_device_id)
-        _check_ret("acl.rt.set_device", _acl.rt.set_device(device_id))
-        _acl_device_id = device_id
+
+
+def _get_device_runtime(device_id: int) -> Dict:
+    """init → set_device → create_context → set_context → stream"""
+    _ensure_acl()
+    if device_id in _device_runtime:
+        rt = _device_runtime[device_id]
+        _check_ret("acl.rt.set_context", _acl.rt.set_context(rt["context"]))
+        return rt
+
+    _check_ret("acl.rt.set_device", _acl.rt.set_device(device_id))
+    context, ret = _acl.rt.create_context(device_id)
+    _check_ret("acl.rt.create_context", ret)
+    _check_ret("acl.rt.set_context", _acl.rt.set_context(context))
+    stream, ret = _acl.rt.create_stream()
+    _check_ret("acl.rt.create_stream", ret)
+
+    rt = {"context": context, "stream": stream, "models": 0}
+    _device_runtime[device_id] = rt
+    logger.info("ACL runtime ready on device %s", device_id)
+    return rt
+
+
+def _memcpy_kind(name: str, default: int) -> int:
+    if _acl is None:
+        return default
+    return int(getattr(_acl, name, default))
 
 
 class OmModel:
@@ -70,22 +94,27 @@ class OmModel:
         self._output_dataset = None
         self._loaded = False
 
+    def _activate_context(self) -> None:
+        rt = _get_device_runtime(self.device_id)
+        self._context = rt["context"]
+        self._stream = rt["stream"]
+        _check_ret("acl.rt.set_context", _acl.rt.set_context(self._context))
+
     def load(self) -> None:
         if self._loaded:
+            self._activate_context()
             return
-        _ensure_acl(self.device_id)
+
+        self._activate_context()
+
         self.model_id, ret = _acl.mdl.load_from_file(self.model_path)
         _check_ret("acl.mdl.load_from_file", ret)
 
         self.model_desc = _acl.mdl.create_desc()
         _check_ret("acl.mdl.get_desc", _acl.mdl.get_desc(self.model_desc, self.model_id))
 
-        self._context, ret = _acl.rt.create_context(self.device_id)
-        _check_ret("acl.rt.create_context", ret)
-        self._stream, ret = _acl.rt.create_stream()
-        _check_ret("acl.rt.create_stream", ret)
-
         self._create_io()
+        _device_runtime[self.device_id]["models"] += 1
         self._loaded = True
         logger.info("OM model loaded: %s (device=%s)", self.model_path, self.device_id)
 
@@ -99,6 +128,7 @@ class OmModel:
         self._input_buffers = []
         self._output_buffers = []
 
+        h2d = _memcpy_kind("ACL_MEMCPY_HOST_TO_DEVICE", 1)
         for i in range(input_count):
             size = _acl.mdl.get_input_size_by_index(self.model_desc, i)
             ptr, ret = _acl.rt.malloc(size, 0)
@@ -123,28 +153,35 @@ class OmModel:
             self.load()
         assert _acl is not None and self.model_desc is not None
 
+        self._activate_context()
+
         if len(inputs) != len(self._input_buffers):
             raise ValueError(
                 f"输入数量不匹配: got {len(inputs)}, model expects {len(self._input_buffers)}"
             )
+
+        h2d = _memcpy_kind("ACL_MEMCPY_HOST_TO_DEVICE", 1)
+        d2h = _memcpy_kind("ACL_MEMCPY_DEVICE_TO_HOST", 2)
 
         for i, arr in enumerate(inputs):
             arr = np.ascontiguousarray(arr)
             ptr, size = self._input_buffers[i]
             if arr.nbytes > size:
                 raise ValueError(
-                    f"输入 {i} 字节 {arr.nbytes} 超过模型 buffer {size}"
+                    f"输入 {i} 字节 {arr.nbytes} 超过模型 buffer {size}；"
+                    f"shape={arr.shape} dtype={arr.dtype}"
                 )
-            host_ptr = arr.ctypes.data
             _check_ret(
                 f"memcpy H2D input {i}",
-                _acl.rt.memcpy(ptr, size, host_ptr, arr.nbytes, 1),
+                _acl.rt.memcpy(ptr, size, arr.ctypes.data, arr.nbytes, h2d),
             )
 
         _check_ret(
             "acl.mdl.execute",
             _acl.mdl.execute(self.model_id, self._input_dataset, self._output_dataset),
         )
+        if self._stream is not None:
+            _check_ret("acl.rt.synchronize_stream", _acl.rt.synchronize_stream(self._stream))
 
         outputs: List[np.ndarray] = []
         output_count = _acl.mdl.get_num_outputs(self.model_desc)
@@ -160,7 +197,7 @@ class OmModel:
             host = np.empty(int(np.prod(shape)), dtype=np_dtype)
             _check_ret(
                 f"memcpy D2H output {i}",
-                _acl.rt.memcpy(host.ctypes.data, host.nbytes, ptr, size, 2),
+                _acl.rt.memcpy(host.ctypes.data, host.nbytes, ptr, size, d2h),
             )
             outputs.append(host.reshape(shape))
 
@@ -170,19 +207,21 @@ class OmModel:
         if not self._loaded or _acl is None:
             return
         try:
+            self._activate_context()
             for ptr, _ in self._input_buffers + self._output_buffers:
                 _acl.rt.free(ptr)
             if self.model_id is not None:
                 _acl.mdl.unload(self.model_id)
             if self.model_desc is not None:
                 _acl.mdl.destroy_desc(self.model_desc)
-            if self._stream is not None:
-                _acl.rt.destroy_stream(self._stream)
-            if self._context is not None:
-                _acl.rt.destroy_context(self._context)
+            rt = _device_runtime.get(self.device_id)
+            if rt:
+                rt["models"] = max(0, rt["models"] - 1)
         finally:
             self._loaded = False
             self.model_id = None
+            self._input_buffers = []
+            self._output_buffers = []
 
     def __del__(self) -> None:
         try:

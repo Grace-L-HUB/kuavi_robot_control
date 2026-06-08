@@ -11,6 +11,7 @@ _atc_check_numpy() {
     echo "[ATC] 警告: $py 未安装 numpy，ATC 可能失败"
     return 0
   fi
+  echo "[ATC] $py -> $(which "$py") ($("$py" --version 2>&1))"
   echo "[ATC] $py numpy=$ver"
   if "$py" -c "import numpy as np; import sys; sys.exit(0 if np.__version__.startswith('1.') else 1)" 2>/dev/null; then
     return 0
@@ -40,8 +41,11 @@ _atc_check_tbe_deps() {
   fi
   echo ""
   echo "[ATC 错误] 缺少 TBE 依赖: ${missing[*]}"
-  echo "  官方方案: bash scripts/atc_install_deps.sh"
-  echo "  或手动: pip3 install decorator attrs cython sympy cffi pyyaml psutil scipy protobuf==3.20.0 requests absl-py numpy==1.26.4"
+  echo "  当前 python: $(which "$py") ($("$py" --version 2>&1))"
+  echo "  常见原因: pip3 装到了别的 Python 版本（如 3.10），ATC 用的是另一个 python3"
+  echo "  请执行:"
+  echo "    $py -m pip install attrs decorator numpy==1.26.4 cython sympy cffi pyyaml psutil protobuf==3.20.0 scipy requests absl-py"
+  echo "  或: bash scripts/atc_install_deps.sh"
   return 1
 }
 
