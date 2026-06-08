@@ -78,6 +78,8 @@ class AscendOmBackend(ASRBackend):
         return _encoder_cache[key]
 
     def transcribe_file(self, path: str) -> str:
+        import types
+
         import torch
         import whisper  # type: ignore
         from whisper.decoding import DecodingOptions, decode
@@ -98,23 +100,33 @@ class AscendOmBackend(ASRBackend):
             raise TypeError(
                 f"Whisper encoder NPU 输出类型错误: {type(features_np)!r}，期望 numpy.ndarray"
             )
-        logger.info("Whisper encoder NPU out shape=%s", features_np.shape)
-        features = torch.from_numpy(np.ascontiguousarray(features_np))
-        if features.ndim == 2:
-            features = features.unsqueeze(0)
 
-        class _NpuEncoder(torch.nn.Module):
-            def __init__(self, feat: torch.Tensor):
-                super().__init__()
-                self.register_buffer("_feat", feat)
+        audio_features = torch.from_numpy(np.ascontiguousarray(features_np)).float()
+        if audio_features.ndim == 2:
+            audio_features = audio_features.unsqueeze(0)
 
-            def forward(self, x: torch.Tensor) -> torch.Tensor:
-                return self._feat
+        expected = (1, model.dims.n_audio_ctx, model.dims.n_audio_state)
+        if audio_features.shape != expected:
+            alt = (1, model.dims.n_audio_state, model.dims.n_audio_ctx)
+            if audio_features.shape == alt:
+                audio_features = audio_features.transpose(1, 2).contiguous()
+            else:
+                raise RuntimeError(
+                    f"Whisper encoder NPU 输出 shape={tuple(audio_features.shape)}，"
+                    f"期望 {expected}（或转置 {alt}）"
+                )
 
-        model.encoder = _NpuEncoder(features.to(torch.float32))
+        logger.info("Whisper encoder NPU out shape=%s", tuple(audio_features.shape))
 
-        lang = self.language if self.language else None
-        options = DecodingOptions(language=lang)
+        _feat = audio_features
+
+        def _npu_encoder_forward(_encoder, x: torch.Tensor) -> torch.Tensor:
+            return _feat.to(device=x.device, dtype=x.dtype)
+
+        model.encoder.forward = types.MethodType(_npu_encoder_forward, model.encoder)
+
+        lang = (self.language or "zh").strip() or "zh"
+        options = DecodingOptions(language=lang, task="transcribe", fp16=False)
         result = decode(model, mel, options)
         text = (result.text or "").strip()
         logger.info("Ascend Whisper (encoder NPU): %r", text)
