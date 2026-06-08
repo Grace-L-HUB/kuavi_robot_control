@@ -1,0 +1,8 @@
+# Atlas 200I NPU 专用 ASR 配置（Whisper encoder 在 NPU，decoder 在 CPU）
+asr:
+  backend: ascend_om
+  ascend:
+    encoder_om: ascend_models/whisper_encoder.om
+    model_size: tiny
+    language: zh
+    device_id: 0

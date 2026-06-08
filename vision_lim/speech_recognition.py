@@ -39,7 +39,14 @@ def _make_backend(cfg: dict):
             language=w.get("language"),
         )
     if backend_name in ("ascend_om", "ascend"):
-        return AscendOmBackend()
+        a = asr_cfg.get("ascend") or {}
+        enc = a.get("encoder_om") or a.get("model_path")
+        return AscendOmBackend(
+            encoder_om_path=str(enc) if enc else None,
+            model_size=str(a.get("model_size") or "tiny"),
+            language=a.get("language", "zh"),
+            device_id=int(a.get("device_id") or 0),
+        )
     raise ValueError(f"未知的 ASR backend: {backend_name}")
 
 

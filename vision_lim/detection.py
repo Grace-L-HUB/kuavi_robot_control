@@ -84,6 +84,7 @@ class YOLODetector:
 
         self._model = None
         self._session = None  # ONNX Runtime session
+        self._npu_detector = None  # 昇腾 .om
         self._input_shape = (640, 640)  # YOLOv8默认输入尺寸
         self._initialized = False
 
@@ -132,6 +133,30 @@ class YOLODetector:
             logger.error(f"Failed to load ONNX model: {e}")
             return False
 
+    def _init_ascend_om(self) -> bool:
+        """昇腾 NPU .om 模型"""
+        try:
+            from .ascend.yolo_npu import YoloNpuDetector, can_use_yolo_npu
+
+            if not can_use_yolo_npu(self.model_path):
+                logger.error(
+                    "Ascend OM 不可用：需 acl 模块且模型存在 %s", self.model_path
+                )
+                return False
+            device_id = 0 if self.device in ("auto", "mlu", "ascend", "npu") else 0
+            self._npu_detector = YoloNpuDetector(
+                self.model_path,
+                device_id=device_id,
+                conf_threshold=self.conf_threshold,
+                iou_threshold=self.iou_threshold,
+            )
+            logger.info("YOLO OM loaded on Ascend NPU: %s", self.model_path)
+            self._initialized = True
+            return True
+        except Exception as e:
+            logger.error("Failed to load Ascend OM YOLO: %s", e)
+            return False
+
     def initialize(self) -> bool:
         """
         初始化检测器，尝试多种后端
@@ -147,7 +172,9 @@ class YOLODetector:
 
         if model_ext == 'pt':
             return self._init_ultralytics()
-        elif model_ext in ('onnx', 'om'):
+        elif model_ext == 'om':
+            return self._init_ascend_om()
+        elif model_ext in ('onnx',):
             return self._init_onnx()
         else:
             # 尝试自动检测
@@ -178,6 +205,8 @@ class YOLODetector:
             if self._model is not None:
                 # Ultralytics YOLO推理
                 return self._detect_ultralytics(image)
+            elif self._npu_detector is not None:
+                return self._detect_ascend_om(image)
             elif self._session is not None:
                 # ONNX Runtime推理
                 return self._detect_onnx(image)
@@ -221,6 +250,23 @@ class YOLODetector:
                     bbox=(x1, y1, x2, y2),
                 ))
 
+        return detections
+
+    def _detect_ascend_om(self, image: np.ndarray) -> List[Detection]:
+        """昇腾 NPU YOLO 推理"""
+        raw = self._npu_detector.detect(image)
+        detections = []
+        for det in raw:
+            x1, y1, x2, y2 = det["bbox"]
+            u, v = det["bbox_center"]
+            detections.append(
+                Detection(
+                    class_name=det["class_name"],
+                    confidence=det["confidence"],
+                    bbox_center=(u, v),
+                    bbox=(x1, y1, x2, y2),
+                )
+            )
         return detections
 
     def _detect_onnx(self, image: np.ndarray) -> List[Detection]:

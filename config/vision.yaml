@@ -1,0 +1,9 @@
+# 视觉检测后端（Atlas 板端推荐 ascend_om）
+vision:
+  backend: auto # auto | ascend_om | ultralytics
+  yolo:
+    model_path: ascend_models/yolov8n.om # NPU 用 .om；CPU 回退用 yolov8n.pt
+    fallback_model_path: ascend_models/yolov8n.pt
+    device_id: 0
+    conf_threshold: 0.35
+    iou_threshold: 0.45

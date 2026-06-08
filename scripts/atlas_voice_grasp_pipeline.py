@@ -6,13 +6,20 @@ Atlas 200I 离线流水线（无 ROS）：
   → YOLO 检测 color_image → 深度采样 → camera_coord_m
   → 写入 grasp_target.json（供 grasp_from_offline_vision.py 使用）
 
-【Atlas 运行示例】
+【Atlas NPU 运行示例】
+  source /usr/local/Ascend/ascend-toolkit/set_env.sh
   source ~/kuavi/bin/activate
   cd ~/kuavi_robot_control
   export PYTHONPATH=$PWD
+  bash scripts/setup_atlas_npu.sh          # 检查环境
+  bash scripts/convert_yolo_to_om.sh       # 首次：生成 yolov8n.om
+  # Whisper encoder ONNX 在 PC 导出，OM 在板端 convert_whisper_encoder_to_om.sh
 
-  python3 scripts/atlas_voice_grasp_pipeline.py
-  python3 scripts/atlas_voice_grasp_pipeline.py --audio instance/record1.m4a
+  python3 scripts/atlas_voice_grasp_pipeline.py \\
+    --asr-config config/asr_atlas_npu.yaml \\
+    --vision-config config/vision.yaml \\
+    --device npu \\
+    --audio instance/record5.m4a
 
 【下位机抓取】（将 grasp_target.json 拷到机器人 scripts/ 后）
   python3 grasp_from_offline_vision.py --hand left --grasp-json grasp_target.json
@@ -37,6 +44,7 @@ if str(ROOT) not in sys.path:
 
 from vision_lim.camera_info_parser import load_intrinsics_from_camera_info_files
 from vision_lim.voice_pipeline import transcribe_then_parse
+from vision_lim.yolo_detect import detect_target_yolo
 
 
 def _log(msg: str) -> None:
@@ -121,60 +129,6 @@ def grasp_pixel_from_bbox(
     return u_c, v_c
 
 
-def detect_target_yolo(
-    color_bgr: np.ndarray,
-    target_class: str,
-    model_path: Path,
-    conf_threshold: float = 0.35,
-    iou_threshold: float = 0.45,
-) -> Optional[Dict]:
-    """YOLO 检测并返回与 target_class 匹配的最高置信度框（COCO 类名）。"""
-    try:
-        from ultralytics import YOLO
-    except ImportError as e:
-        raise ImportError("请安装 ultralytics: pip install ultralytics") from e
-
-    if not model_path.is_file():
-        raise FileNotFoundError(
-            f"未找到 YOLO 模型: {model_path}\n"
-            "请将 yolov8n.pt 放到 ascend_models/ 目录"
-        )
-
-    model = YOLO(str(model_path))
-    results = model(color_bgr, conf=conf_threshold, iou=iou_threshold, verbose=False)
-    if not results:
-        return None
-
-    result = results[0]
-    names = result.names or {}
-    target = target_class.lower().strip()
-    best = None
-
-    boxes = result.boxes
-    if boxes is None:
-        return None
-
-    for box in boxes:
-        cls_id = int(box.cls[0])
-        conf = float(box.conf[0])
-        class_name = str(names.get(cls_id, f"class_{cls_id}")).lower()
-        if class_name != target:
-            continue
-        x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
-        x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
-        u, v = int((x1 + x2) / 2), int((y1 + y2) / 2)
-        det = {
-            "class_name": class_name,
-            "confidence": conf,
-            "bbox": [x1, y1, x2, y2],
-            "bbox_center": [u, v],
-        }
-        if best is None or conf > best["confidence"]:
-            best = det
-
-    return best
-
-
 def run_pipeline(
     audio_path: Path,
     color_path: Path,
@@ -184,6 +138,8 @@ def run_pipeline(
     output_path: Path,
     model_path: Path,
     asr_config: Optional[str],
+    vision_config: Optional[str],
+    device: str,
     vertical_ratio: float,
     text_override: Optional[str],
 ) -> Dict:
@@ -197,6 +153,8 @@ def run_pipeline(
         wav_path = _ensure_wav(audio_path)
         transcript, task = transcribe_then_parse(str(wav_path), config_path=asr_config)
         _log(f"[语音] ASR: {transcript}")
+        if asr_config and "atlas_npu" in asr_config:
+            _log("[语音] ASR 后端: 昇腾 NPU (encoder.om + CPU decode)")
     _log(f"[语音] 任务 JSON: {json.dumps(task, ensure_ascii=False)}")
 
     if task.get("action") == "stop":
@@ -222,7 +180,14 @@ def run_pipeline(
     )
 
     # --- 3. YOLO 检测 ---
-    detection = detect_target_yolo(color, target_class, model_path)
+    detection, yolo_backend = detect_target_yolo(
+        color,
+        target_class,
+        model_path=None if str(model_path) == "." else str(model_path),
+        vision_config_path=vision_config,
+        device=device,
+    )
+    _log(f"[YOLO] 推理设备: {yolo_backend.upper()}")
     if detection is None:
         raise RuntimeError(
             f"YOLO 未检测到 '{target_class}'。"
@@ -248,7 +213,7 @@ def run_pipeline(
     grasp_json = {
         "voice_transcript": transcript,
         "voice_task": task,
-        "detected_class": detection["class_name"],
+        "yolo_backend": yolo_backend,
         "detection_confidence": round(detection["confidence"], 4),
         "bbox_color": detection["bbox"],
         "pixel_color": [u_c, v_c],
@@ -258,8 +223,8 @@ def run_pipeline(
         "color_intrinsics": color_ci,
         "depth_intrinsics": depth_di,
         "note": (
-            f"Atlas pipeline: ASR+YOLO({target_class}) → camera_coord_m; "
-            f"grasp vertical_ratio={vertical_ratio}"
+            f"Atlas pipeline (ASR+NPU/CPU, YOLO={yolo_backend}): "
+            f"{target_class} → camera_coord_m; vertical_ratio={vertical_ratio}"
         ),
     }
 
@@ -292,14 +257,21 @@ def main() -> int:
     parser.add_argument("--camera-info-color", default=str(instance / "camera_info.txt"))
     parser.add_argument("--camera-info-depth", default=str(instance / "camera_info1.txt"))
     parser.add_argument(
-        "--model", default=str(ROOT / "ascend_models" / "yolov8n.pt"),
-        help="YOLO 模型路径（.pt）",
+        "--model", default=None,
+        help="YOLO 模型路径（.om 或 .pt；默认读 config/vision.yaml）",
     )
     parser.add_argument(
         "--output", default=str(instance / "grasp_target.json"),
         help="输出 grasp_target.json",
     )
-    parser.add_argument("--asr-config", default=None, help="覆盖 config/asr.yaml")
+    parser.add_argument("--asr-config", default=None, help="ASR 配置，NPU 用 config/asr_atlas_npu.yaml")
+    parser.add_argument(
+        "--vision-config", default=None, help="视觉配置，默认 config/vision.yaml",
+    )
+    parser.add_argument(
+        "--device", default="auto", choices=["auto", "npu", "cpu"],
+        help="推理设备：auto=有 .om 且 acl 可用则用 NPU，否则 CPU",
+    )
     parser.add_argument(
         "--vertical-ratio", type=float, default=0.65,
         help="抓取点在检测框内的垂直比例（0=顶，1=底，默认0.65偏下）",
@@ -318,8 +290,10 @@ def main() -> int:
             color_info_path=Path(args.camera_info_color),
             depth_info_path=Path(args.camera_info_depth),
             output_path=Path(args.output),
-            model_path=Path(args.model),
+            model_path=Path(args.model) if args.model else Path("."),
             asr_config=args.asr_config,
+            vision_config=args.vision_config,
+            device=args.device,
             vertical_ratio=args.vertical_ratio,
             text_override=args.text,
         )

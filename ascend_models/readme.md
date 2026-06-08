@@ -73,6 +73,54 @@ atc --model=yolov8n.onnx \
 - **Whisper语音模型**：输入为音频特征，需保持输入尺寸固定
 - **BERT语义模型**：输入为token序列，可使用动态batch
 
+## Atlas 200I NPU 部署（本项目已实现）
+
+### 1. 环境
+
+```bash
+source /usr/local/Ascend/ascend-toolkit/set_env.sh
+source ~/kuavi/bin/activate
+cd ~/kuavi_robot_control
+bash scripts/setup_atlas_npu.sh
+```
+
+### 2. 模型转换
+
+| 模型 | 在哪转换 | 命令 |
+|------|----------|------|
+| YOLOv8n | Atlas（或 PC 导出 ONNX 后拷到板端） | `bash scripts/convert_yolo_to_om.sh` |
+| Whisper encoder | PC 导出 ONNX → Atlas 转 OM | PC: `python3 scripts/export_whisper_encoder_onnx.py`<br>Atlas: `bash scripts/convert_whisper_encoder_to_om.sh` |
+
+产物：
+- `ascend_models/yolov8n.om`
+- `ascend_models/whisper_encoder.om`
+
+### 3. 运行 NPU 流水线
+
+```bash
+export PYTHONPATH=$PWD
+python3 scripts/atlas_voice_grasp_pipeline.py \
+  --asr-config config/asr_atlas_npu.yaml \
+  --vision-config config/vision.yaml \
+  --device npu \
+  --audio instance/record5.m4a
+```
+
+日志中应出现：
+- `[语音] ASR 后端: 昇腾 NPU (encoder.om + CPU decode)`
+- `[YOLO] 推理设备: NPU`
+
+### 4. 架构说明
+
+- **YOLO**：完整在 NPU 上推理（`.om` + ACL），CPU 做 NMS 后处理
+- **Whisper**：Encoder 在 NPU（算力大头），Decoder 在 CPU（openai-whisper，轻量）
+- **无 .om 或 acl 不可用时**：`--device auto` 自动回退 CPU + `.pt`
+
+代码位置：
+- `vision_lim/ascend/om_infer.py` — ACL 加载 `.om`
+- `vision_lim/ascend/yolo_npu.py` — YOLO NPU 检测
+- `vision_lim/asr_backends/ascend_om.py` — Whisper NPU+CPU 混合 ASR
+
 ## 推理调用示例
 
 转换完成后，可在Python中使用mindx.sdk加载模型进行推理：
