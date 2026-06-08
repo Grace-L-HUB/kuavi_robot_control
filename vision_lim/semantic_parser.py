@@ -25,9 +25,26 @@ _OBJECT_CN = {
     "杯": "cup",
     "球": "ball",
     "手机": "phone",
+    "水瓶": "bottle",
     "瓶子": "bottle",
     "瓶": "bottle",
 }
+
+# Whisper 常见同音误识别 → 纠正后再做 NLU
+_ASR_HOMOPHONE_FIX = {
+    "屏子": "瓶子",
+    "平子": "瓶子",
+    "凭子": "瓶子",
+    "屏": "瓶",
+}
+
+
+def fix_asr_homophones(text: str) -> str:
+    """纠正 Whisper 同音错字（如「拿屏子」→「拿瓶子」）。"""
+    s = text
+    for wrong, right in sorted(_ASR_HOMOPHONE_FIX.items(), key=lambda x: -len(x[0])):
+        s = s.replace(wrong, right)
+    return s
 
 
 def _normalize(text: str) -> str:
@@ -42,6 +59,7 @@ def parse_instruction(text: str) -> Dict[str, Any]:
     输出字段与 vision_lim/readme 对齐：attribute 为英文颜色码。
     """
     raw = text.strip()
+    raw = fix_asr_homophones(raw)
     norm = _normalize(raw)
 
     if any(k in raw for k in ("停止", "停下", "别动", "取消")):

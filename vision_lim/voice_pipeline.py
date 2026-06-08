@@ -8,14 +8,15 @@ import tempfile
 from typing import Any, Dict, Optional, Tuple
 
 from .audio_record import record_wav_file
-from .semantic_parser import parse_instruction
+from .semantic_parser import fix_asr_homophones, parse_instruction
 from .speech_recognition import transcribe_file
 
 
 def normalize_asr_text(text: str) -> str:
-    """压缩 Whisper 输出的多余空白，便于规则匹配。"""
+    """压缩 Whisper 输出的多余空白，并纠正常见同音错字。"""
     s = text.strip()
     s = re.sub(r"\s+", " ", s)
+    s = fix_asr_homophones(s)
     return s
 
 
