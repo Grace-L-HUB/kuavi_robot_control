@@ -299,6 +299,8 @@ def main() -> int:
         )
         return 0
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         _log(f"[错误] {e}")
         return 1
 

@@ -63,6 +63,8 @@ def postprocess_yolov8(
     names = class_names or COCO80
 
     out = output
+    if not isinstance(out, np.ndarray):
+        raise TypeError(f"YOLO 输出必须是 numpy.ndarray，实际为 {type(out)!r}")
     if out.ndim == 3:
         if out.shape[1] == 84 or out.shape[1] == 4 + len(names):
             out = np.transpose(out, (0, 2, 1))

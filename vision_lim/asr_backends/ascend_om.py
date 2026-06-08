@@ -91,6 +91,11 @@ class AscendOmBackend(ASRBackend):
         mel_batch = mel.unsqueeze(0).numpy().astype(np.float32)
 
         features_np = om.infer([mel_batch])[0]
+        if not isinstance(features_np, np.ndarray):
+            raise TypeError(
+                f"Whisper encoder NPU 输出类型错误: {type(features_np)!r}，期望 numpy.ndarray"
+            )
+        logger.info("Whisper encoder NPU out shape=%s", features_np.shape)
         features = torch.from_numpy(np.ascontiguousarray(features_np))
         if features.ndim == 2:
             features = features.unsqueeze(0)

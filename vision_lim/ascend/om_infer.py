@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -12,13 +12,10 @@ logger = logging.getLogger(__name__)
 
 _acl = None
 _acl_initialized = False
-
-# 同一 device 共享 Context/Stream（官方要求 load/execute 在同一 Context）
 _device_runtime: Dict[int, Dict] = {}
 
 
 def is_ascend_available() -> bool:
-    """当前 Python 环境是否可 import acl（需 source CANN set_env.sh）。"""
     try:
         import acl  # noqa: F401
         return True
@@ -32,7 +29,6 @@ def _check_ret(msg: str, ret: int) -> None:
 
 
 def _acl_ret(result: Any, msg: str) -> int:
-    """仅返回 error code 的 API（如 set_device、execute、memcpy）。"""
     if isinstance(result, tuple):
         if len(result) == 2 and isinstance(result[1], int):
             _check_ret(msg, int(result[1]))
@@ -47,18 +43,39 @@ def _acl_ret(result: Any, msg: str) -> int:
 
 
 def _acl_value_ret(result: Any, msg: str) -> Tuple[Any, int]:
-    """
-    返回 (value, ret) 的 API；兼容部分 CANN 版本只返回 value（int）的情况。
-    """
     if isinstance(result, tuple):
         if len(result) >= 2:
             return result[0], int(result[1])
         if len(result) == 1:
             return result[0], 0
     if isinstance(result, int):
-        # create_context / create_stream / malloc 等：单 int 视为 handle，ret=0
         return result, 0
     raise TypeError(f"{msg}: 无法解析 ACL 返回值 {type(result)!r}")
+
+
+def _parse_dims(result: Any) -> Tuple[int, ...]:
+    """解析 get_output_dims / get_cur_output_dims 的多种返回格式。"""
+    if isinstance(result, dict):
+        dims = result.get("dims") or result.get("dim") or []
+        return tuple(int(x) for x in dims)
+    if isinstance(result, tuple):
+        for item in result:
+            if isinstance(item, dict) and "dims" in item:
+                return tuple(int(x) for x in item["dims"])
+            if isinstance(item, (list, tuple)) and item and isinstance(item[0], int):
+                return tuple(int(x) for x in item)
+    if isinstance(result, (list, tuple)) and result and isinstance(result[0], int):
+        return tuple(int(x) for x in result)
+    return ()
+
+
+def _acl_obj(result: Any, msg: str) -> Any:
+    """create_desc / create_dataset 等返回单个对象的 API。"""
+    if isinstance(result, tuple) and result:
+        if len(result) >= 2 and isinstance(result[1], int):
+            _check_ret(msg, int(result[1]))
+        return result[0]
+    return result
 
 
 def _ensure_acl() -> None:
@@ -72,7 +89,6 @@ def _ensure_acl() -> None:
 
 
 def _get_device_runtime(device_id: int) -> Dict:
-    """init → set_device → create_context → set_context → stream"""
     _ensure_acl()
     if device_id in _device_runtime:
         rt = _device_runtime[device_id]
@@ -99,16 +115,6 @@ def _memcpy_kind(name: str, default: int) -> int:
 
 
 class OmModel:
-    """
-    昇腾 .om 模型推理封装（CANN ACL Python API）。
-
-    用法::
-
-        model = OmModel("ascend_models/yolov8n.om", device_id=0)
-        outputs = model.infer([input_np])
-        model.release()
-    """
-
     def __init__(self, model_path: str, device_id: int = 0):
         self.model_path = str(Path(model_path).resolve())
         if not Path(self.model_path).is_file():
@@ -120,6 +126,8 @@ class OmModel:
         self.model_desc = None
         self._input_buffers: List[Tuple[int, int]] = []
         self._output_buffers: List[Tuple[int, int]] = []
+        self._output_shapes: List[Tuple[int, ...]] = []
+        self._output_dtypes: List[np.dtype] = []
         self._input_dataset = None
         self._output_dataset = None
         self._loaded = False
@@ -143,29 +151,54 @@ class OmModel:
         _check_ret("acl.mdl.load_from_file", ret)
         self.model_id = int(model_id)
 
-        self.model_desc = _acl.mdl.create_desc()
+        self.model_desc = _acl_obj(_acl.mdl.create_desc(), "acl.mdl.create_desc")
         _acl_ret(
             _acl.mdl.get_desc(self.model_desc, self.model_id),
             "acl.mdl.get_desc",
         )
 
+        self._cache_output_meta()
         self._create_io()
         _device_runtime[self.device_id]["models"] += 1
         self._loaded = True
         logger.info("OM model loaded: %s (device=%s)", self.model_path, self.device_id)
+
+    def _cache_output_meta(self) -> None:
+        assert _acl is not None and self.model_desc is not None
+        self._output_shapes = []
+        self._output_dtypes = []
+        n = _acl.mdl.get_num_outputs(self.model_desc)
+        for i in range(n):
+            shape: Tuple[int, ...] = ()
+            if hasattr(_acl.mdl, "get_output_dims"):
+                try:
+                    shape = _parse_dims(_acl.mdl.get_output_dims(self.model_desc, i))
+                except Exception as e:
+                    logger.warning("get_output_dims(%s) failed: %s", i, e)
+            dtype_val = 0
+            try:
+                dt = _acl.mdl.get_output_data_type(self.model_desc, i)
+                if isinstance(dt, int):
+                    dtype_val = dt
+                elif isinstance(dt, tuple) and dt:
+                    dtype_val = int(dt[0])
+            except Exception as e:
+                logger.warning("get_output_data_type(%s) failed: %s", i, e)
+            self._output_shapes.append(shape)
+            self._output_dtypes.append(_acl_dtype_to_numpy(dtype_val))
 
     def _create_io(self) -> None:
         assert _acl is not None and self.model_desc is not None
         input_count = _acl.mdl.get_num_inputs(self.model_desc)
         output_count = _acl.mdl.get_num_outputs(self.model_desc)
 
-        self._input_dataset = _acl.mdl.create_dataset()
-        self._output_dataset = _acl.mdl.create_dataset()
+        self._input_dataset = _acl_obj(_acl.mdl.create_dataset(), "create input dataset")
+        self._output_dataset = _acl_obj(_acl.mdl.create_dataset(), "create output dataset")
         self._input_buffers = []
         self._output_buffers = []
 
         for i in range(input_count):
-            size = _acl.mdl.get_input_size_by_index(self.model_desc, i)
+            size = int(_acl.mdl.get_input_size_by_index(self.model_desc, i))
             ptr, ret = _acl_value_ret(_acl.rt.malloc(size, 0), f"malloc input {i}")
             _check_ret(f"malloc input {i}", ret)
             data_buffer = _acl.create_data_buffer(ptr, size)
@@ -173,10 +206,10 @@ class OmModel:
                 _acl.mdl.add_dataset_buffer(self._input_dataset, data_buffer),
                 f"add input buffer {i}",
             )
-            self._input_buffers.append((int(ptr), int(size)))
+            self._input_buffers.append((int(ptr), size))
 
         for i in range(output_count):
-            size = _acl.mdl.get_output_size_by_index(self.model_desc, i)
+            size = int(_acl.mdl.get_output_size_by_index(self.model_desc, i))
             ptr, ret = _acl_value_ret(_acl.rt.malloc(size, 0), f"malloc output {i}")
             _check_ret(f"malloc output {i}", ret)
             data_buffer = _acl.create_data_buffer(ptr, size)
@@ -184,10 +217,9 @@ class OmModel:
                 _acl.mdl.add_dataset_buffer(self._output_dataset, data_buffer),
                 f"add output buffer {i}",
             )
-            self._output_buffers.append((int(ptr), int(size)))
+            self._output_buffers.append((int(ptr), size))
 
     def infer(self, inputs: Sequence[np.ndarray]) -> List[np.ndarray]:
-        """执行推理，返回 host 侧 numpy 输出列表。"""
         if not self._loaded:
             self.load()
         assert _acl is not None and self.model_desc is not None
@@ -203,7 +235,9 @@ class OmModel:
         d2h = _memcpy_kind("ACL_MEMCPY_DEVICE_TO_HOST", 2)
 
         for i, arr in enumerate(inputs):
-            arr = np.ascontiguousarray(arr)
+            if not isinstance(arr, np.ndarray):
+                raise TypeError(f"输入 {i} 必须是 numpy.ndarray，实际为 {type(arr)!r}")
+            arr = np.ascontiguousarray(arr, dtype=np.float32)
             ptr, size = self._input_buffers[i]
             if arr.nbytes > size:
                 raise ValueError(
@@ -226,40 +260,25 @@ class OmModel:
         output_count = _acl.mdl.get_num_outputs(self.model_desc)
         for i in range(output_count):
             ptr, size = self._output_buffers[i]
-            dims = self._read_output_dims(i)
-            dtype = self._read_output_dtype(i)
-            np_dtype = _acl_dtype_to_numpy(dtype)
-            shape = tuple(int(d) for d in dims.get("dims", [])) if isinstance(dims, dict) else ()
-            if not shape or shape[0] <= 0:
-                shape = (size // np.dtype(np_dtype).itemsize,)
+            np_dtype = self._output_dtypes[i] if i < len(self._output_dtypes) else np.float32
+            shape = self._output_shapes[i] if i < len(self._output_shapes) else ()
+
+            if not shape or int(np.prod(shape)) <= 0:
+                n_elems = size // np.dtype(np_dtype).itemsize
+                shape = (n_elems,)
 
             host = np.empty(int(np.prod(shape)), dtype=np_dtype)
+            copy_bytes = min(host.nbytes, size)
             _acl_ret(
-                _acl.rt.memcpy(host.ctypes.data, host.nbytes, ptr, size, d2h),
+                _acl.rt.memcpy(host.ctypes.data, copy_bytes, ptr, copy_bytes, d2h),
                 f"memcpy D2H output {i}",
             )
-            outputs.append(host.reshape(shape))
+            out = np.ascontiguousarray(host.reshape(shape))
+            if not isinstance(out, np.ndarray):
+                raise TypeError(f"输出 {i} 不是 ndarray: {type(out)!r}")
+            outputs.append(out)
 
         return outputs
-
-    def _read_output_dims(self, index: int) -> Dict:
-        result = _acl.mdl.get_cur_output_dims(self.model_desc, index)
-        if isinstance(result, dict):
-            return result
-        if isinstance(result, tuple):
-            if isinstance(result[0], dict):
-                return result[0]
-            if len(result) >= 2 and isinstance(result[1], dict):
-                return result[1]
-        return {"dims": []}
-
-    def _read_output_dtype(self, index: int) -> int:
-        result = _acl.mdl.get_output_data_type(self.model_desc, index)
-        if isinstance(result, int):
-            return result
-        if isinstance(result, tuple) and result:
-            return int(result[0])
-        return 0
 
     def release(self) -> None:
         if not self._loaded or _acl is None:
@@ -297,7 +316,7 @@ def _acl_dtype_to_numpy(dtype: int) -> np.dtype:
         getattr(_acl, "INT32", 3): np.int32,
         getattr(_acl, "UINT8", 4): np.uint8,
     }
-    return mapping.get(dtype, np.float32)
+    return mapping.get(int(dtype), np.float32)
 
 
 def default_om_path(name: str, repo_root: Optional[Path] = None) -> Path:
