@@ -77,6 +77,29 @@ POST_GRASP_LIFT_Z = 0.22
 # 是否执行后方预抓取（False=直接到上方，减少 workspace 越界）
 USE_PRE_GRASP = False
 
+# =============================================================================
+# 安全悬停参数 — 防止碰撞的关键路径控制
+# =============================================================================
+# 从 APPROACH_ABOVE 移动到 GRASP_POS 时，先后撤到安全悬停点再垂直下降，
+# 保证末端执行器在 XY 平面上的投影始终远离物体，不会直线扫过物体。
+#
+# 【调参指南】（运行 --dry-coords 预览坐标）
+#   SAFE_HOVER_BACK_M
+#     - 含义：X 方向后撤距离（米），正值=X轴后退
+#     - 增大 → 水平避让更充分，但可能超出机械臂工作空间
+#     - 减小 → IK 更容易收敛，但碰撞风险上升（建议不低于 0.03）
+#   SAFE_HOVER_Z_ABOVE_M
+#     - 含义：Z 方向额外抬高量（米），在 APPROACH_ABOVE 基础上再升
+#     - 增大 → 下降路径更长、更安全，但总流程时间增加
+#     - 减小 → 垂直行程缩短，若 IK 轨迹不够平滑可能扫到物体
+#   GRASP_DESCENT_DURATION
+#     - 含义：垂直下降的运动时间（秒）
+#     - 增大 → 下降更缓慢平稳，适合精确定位
+#     - 减小 → 抓取更快，但高速下降可能导致末端执行器惯性碰撞
+SAFE_HOVER_BACK_M = 0.06      # X 方向后撤距离（米）
+SAFE_HOVER_Z_ABOVE_M = 0.05   # Z 方向额外抬高量（米）
+GRASP_DESCENT_DURATION = 3.5  # 垂直下降的运动时间（秒）
+
 # 姿态 quat_xyzw（相对 IK 基座）
 PALM_DOWN_QUAT = [0.0, -0.70682518, 0.0, 0.70738827]
 GRASP_QUAT_RIGHT = [-0.5002, -0.4998, -0.4998, 0.5002]
@@ -105,6 +128,7 @@ DEFAULT_GRASP_JSON = _SCRIPT_DIR / "grasp_target.json"
 
 PRE_GRASP: Tuple[float, float, float] = (0.0, 0.0, 0.0)
 APPROACH_ABOVE: Tuple[float, float, float] = (0.0, 0.0, 0.0)
+SAFE_HOVER: Tuple[float, float, float] = (0.0, 0.0, 0.0)
 GRASP_POS: Tuple[float, float, float] = (0.0, 0.0, 0.0)
 LIFT_POS: Tuple[float, float, float] = (0.0, 0.0, 0.0)
 RETREAT: Tuple[float, float, float] = (0.0, 0.0, 0.0)
@@ -517,7 +541,7 @@ def _load_camera_point_from_json(path: Path) -> tuple:
 
 
 def _apply_grasp_coordinates(camera_point: tuple, hand: str) -> None:
-    global PRE_GRASP, APPROACH_ABOVE, GRASP_POS, LIFT_POS, RETREAT
+    global PRE_GRASP, APPROACH_ABOVE, SAFE_HOVER, GRASP_POS, LIFT_POS, RETREAT
     global ACTIVE_GRASP_QUAT, INACTIVE_LEFT_POS, INACTIVE_RIGHT_POS
 
     poses = resolve_grasp_poses_arm_base(camera_point, hand=hand)
@@ -527,6 +551,14 @@ def _apply_grasp_coordinates(camera_point: tuple, hand: str) -> None:
     LIFT_POS = tuple(poses["lift"])
     RETREAT = tuple(poses["retreat"])
     ACTIVE_GRASP_QUAT = list(poses["grasp_quat_xyzw"])
+
+    # ---- 安全悬停点（防止碰撞的关键路径节点）----
+    # X 方向后撤，远离物体水平投影区；Z 方向额外抬高
+    sx = APPROACH_ABOVE[0] - SAFE_HOVER_BACK_M
+    sy = APPROACH_ABOVE[1]
+    sz = APPROACH_ABOVE[2] + SAFE_HOVER_Z_ABOVE_M
+    SAFE_HOVER = (sx, sy, sz)
+    # --------------------------------------------
 
     inact = poses["inactive_arm_pose"]
     if hand == "right":
@@ -540,6 +572,7 @@ def _apply_grasp_coordinates(camera_point: tuple, hand: str) -> None:
     _log(f"[坐标] 抓取点 (m): {GRASP_POS}")
     _log(f"[坐标] 预抓取 (m): {PRE_GRASP}")
     _log(f"[坐标] 上方就位 (m): {APPROACH_ABOVE}")
+    _log(f"[坐标] 安全悬停 (m): {SAFE_HOVER}  [防碰撞路径节点]")
     _log(f"[坐标] 上提 (m): {LIFT_POS}")
     _log(f"[坐标] 后撤 (m): {RETREAT}")
     _log(f"[姿态] quat_xyzw: {ACTIVE_GRASP_QUAT}")
@@ -557,7 +590,7 @@ def run_grasp(hand: str, grasp_width: int, grasp_effort: float,
 
     if hand == "left":
         _log("[策略] --hand left：左手 IK 双臂运动，抓取由 left_claw 开合")
-    _log("[策略] 垂直流程：上方就位 → 下降抓取 → 闭合 → 向上提起 → 后撤")
+    _log("[策略] 安全路径：上方就位 → 安全悬停(水平后撤) → 纯垂直下降 → 闭合 → 提起 → 后撤")
 
     if not skip_arm_mode:
         _set_arm_mode_external()
@@ -587,7 +620,11 @@ def run_grasp(hand: str, grasp_width: int, grasp_effort: float,
             return False
     if not _move_to(ik_proxy, arm_pub, APPROACH_ABOVE, hand, 3.5, "上方就位", use_target_poses):
         return False
-    if not _move_to(ik_proxy, arm_pub, GRASP_POS, hand, 3.5, "下降抓取", use_target_poses):
+    # ---- 安全悬停：水平后撤，避免末端执行器直线扫过物体 ----
+    if not _move_to(ik_proxy, arm_pub, SAFE_HOVER, hand, 2.5, "安全悬停(X轴后撤)", use_target_poses):
+        return False
+    # ---- 纯垂直下降：XY 固定，只降低 Z，直接到达抓取高度 ----
+    if not _move_to(ik_proxy, arm_pub, GRASP_POS, hand, GRASP_DESCENT_DURATION, "纯垂直下降", use_target_poses):
         return False
 
     if not skip_gripper:
