@@ -12,8 +12,9 @@
   python3 grasp_from_offline_vision.py --dry-coords --hand right
   python3 grasp_from_offline_vision.py --hand right
 
-  # --hand left：左手 IK 双臂就位，到位后由 left_claw 抓取
+  # --hand left：左手 IK 双臂就位，三段位姿（左上方→正上方→下降）后 left_claw 抓取
   python3 grasp_from_offline_vision.py --hand left
+  python3 grasp_from_offline_vision.py --hand left --dry-coords
 
 【调参】只改下方 ===== 用户参数区 =====，保存后重跑 --dry-coords 预览坐标。
 """
@@ -67,14 +68,18 @@ PRE_GRASP_BACK_M = 0.10
 PRE_GRASP_LIFT_Z = 0.03
 RETREAT_BACK_M = 0.08
 RETREAT_LIFT_Z = 0.05
-# 抓取前：先到终点正上方（纯垂直流程，跳过侧向后方预抓取）
+# 抓取前：三段位姿（左上方 → 正上方 → 垂直下降），避免侧向撞到瓶身
 # 优先用 APPROACH_ABOVE_Z_TARGET（base 绝对高度）；为 None 时用相对偏移 APPROACH_ABOVE_Z
 APPROACH_ABOVE_Z_TARGET = -0.145
 APPROACH_ABOVE_Z = 0.30
+# 第一段「左上方」：相对抓取点在 base Y 方向外扩（left 手 +Y，right 手 -Y），Z 与正上方同高
+USE_THREE_STAGE_APPROACH = True
+APPROACH_UPPER_LEFT_LATERAL_M = 0.10
+APPROACH_UPPER_LEFT_BACK_M = 0.0
 # 夹紧后上提：与上方就位同高（APPROACH_ABOVE_Z_TARGET）；否则用相对偏移 POST_GRASP_LIFT_Z
 POST_GRASP_LIFT_MATCH_APPROACH = True
 POST_GRASP_LIFT_Z = 0.22
-# 是否执行后方预抓取（False=直接到上方，减少 workspace 越界）
+# 是否执行旧版后方预抓取（与三段位姿互斥，一般保持 False）
 USE_PRE_GRASP = False
 
 # 姿态 quat_xyzw（相对 IK 基座）
@@ -104,6 +109,7 @@ DEFAULT_GRASP_JSON = _SCRIPT_DIR / "grasp_target.json"
 # =============================================================================
 
 PRE_GRASP: Tuple[float, float, float] = (0.0, 0.0, 0.0)
+APPROACH_UPPER_LEFT: Tuple[float, float, float] = (0.0, 0.0, 0.0)
 APPROACH_ABOVE: Tuple[float, float, float] = (0.0, 0.0, 0.0)
 GRASP_POS: Tuple[float, float, float] = (0.0, 0.0, 0.0)
 LIFT_POS: Tuple[float, float, float] = (0.0, 0.0, 0.0)
@@ -142,6 +148,9 @@ def _build_config_dict() -> Dict:
             "retreat_lift_z": RETREAT_LIFT_Z,
             "approach_above_z": APPROACH_ABOVE_Z,
             "approach_above_z_target": APPROACH_ABOVE_Z_TARGET,
+            "use_three_stage_approach": USE_THREE_STAGE_APPROACH,
+            "approach_upper_left_lateral_m": APPROACH_UPPER_LEFT_LATERAL_M,
+            "approach_upper_left_back_m": APPROACH_UPPER_LEFT_BACK_M,
             "post_grasp_lift_z": POST_GRASP_LIFT_Z,
             "post_grasp_lift_match_approach": POST_GRASP_LIFT_MATCH_APPROACH,
         },
@@ -251,11 +260,25 @@ def resolve_grasp_poses_arm_base(
         lift = (grasp[0], grasp[1], grasp[2] + post_lift)
     retreat = (grasp[0] - ret_back, grasp[1], lift[2] + ret_lift)
 
+    use_three = bool(off.get("use_three_stage_approach", True))
+    lateral = float(off.get("approach_upper_left_lateral_m", 0.10))
+    back_m = float(off.get("approach_upper_left_back_m", 0.0))
+    lat_sign = 1.0 if hand == "left" else -1.0
+    if use_three:
+        approach_upper_left = (
+            grasp[0] - back_m,
+            grasp[1] + lat_sign * lateral,
+            approach_above[2],
+        )
+    else:
+        approach_upper_left = approach_above
+
     return {
         "camera_coord_m": list(point_cam),
         "base_target_m": list(base),
         "arm_coord_m": list(grasp),
         "pre_grasp": list(pre),
+        "approach_upper_left": list(approach_upper_left),
         "approach_above": list(approach_above),
         "grasp": list(grasp),
         "lift": list(lift),
@@ -517,11 +540,12 @@ def _load_camera_point_from_json(path: Path) -> tuple:
 
 
 def _apply_grasp_coordinates(camera_point: tuple, hand: str) -> None:
-    global PRE_GRASP, APPROACH_ABOVE, GRASP_POS, LIFT_POS, RETREAT
+    global PRE_GRASP, APPROACH_UPPER_LEFT, APPROACH_ABOVE, GRASP_POS, LIFT_POS, RETREAT
     global ACTIVE_GRASP_QUAT, INACTIVE_LEFT_POS, INACTIVE_RIGHT_POS
 
     poses = resolve_grasp_poses_arm_base(camera_point, hand=hand)
     PRE_GRASP = tuple(poses["pre_grasp"])
+    APPROACH_UPPER_LEFT = tuple(poses["approach_upper_left"])
     APPROACH_ABOVE = tuple(poses["approach_above"])
     GRASP_POS = tuple(poses["grasp"])
     LIFT_POS = tuple(poses["lift"])
@@ -539,7 +563,9 @@ def _apply_grasp_coordinates(camera_point: tuple, hand: str) -> None:
     _log(f"[坐标] 视觉中心 (m): {poses['base_target_m']}")
     _log(f"[坐标] 抓取点 (m): {GRASP_POS}")
     _log(f"[坐标] 预抓取 (m): {PRE_GRASP}")
-    _log(f"[坐标] 上方就位 (m): {APPROACH_ABOVE}")
+    if USE_THREE_STAGE_APPROACH:
+        _log(f"[坐标] 左上方就位 (m): {APPROACH_UPPER_LEFT}")
+    _log(f"[坐标] 正上方就位 (m): {APPROACH_ABOVE}")
     _log(f"[坐标] 上提 (m): {LIFT_POS}")
     _log(f"[坐标] 后撤 (m): {RETREAT}")
     _log(f"[姿态] quat_xyzw: {ACTIVE_GRASP_QUAT}")
@@ -557,7 +583,10 @@ def run_grasp(hand: str, grasp_width: int, grasp_effort: float,
 
     if hand == "left":
         _log("[策略] --hand left：左手 IK 双臂运动，抓取由 left_claw 开合")
-    _log("[策略] 垂直流程：上方就位 → 下降抓取 → 闭合 → 向上提起 → 后撤")
+    if USE_THREE_STAGE_APPROACH:
+        _log("[策略] 三段位姿：左上方 → 正上方 → 垂直下降 → 闭合 → 上提 → 后撤")
+    else:
+        _log("[策略] 垂直流程：正上方 → 下降抓取 → 闭合 → 向上提起 → 后撤")
 
     if not skip_arm_mode:
         _set_arm_mode_external()
@@ -582,12 +611,18 @@ def run_grasp(hand: str, grasp_width: int, grasp_effort: float,
         _claw_cmd(claw_hand, 0)
         rospy.sleep(0.8)
 
-    if USE_PRE_GRASP:
+    if USE_PRE_GRASP and not USE_THREE_STAGE_APPROACH:
         if not _move_to(ik_proxy, arm_pub, PRE_GRASP, hand, 2.0, "后方就位", use_target_poses):
             return False
-    if not _move_to(ik_proxy, arm_pub, APPROACH_ABOVE, hand, 3.5, "上方就位", use_target_poses):
+    if USE_THREE_STAGE_APPROACH:
+        if not _move_to(
+            ik_proxy, arm_pub, APPROACH_UPPER_LEFT, hand, 3.0,
+            "左上方就位", use_target_poses,
+        ):
+            return False
+    if not _move_to(ik_proxy, arm_pub, APPROACH_ABOVE, hand, 2.5, "正上方就位", use_target_poses):
         return False
-    if not _move_to(ik_proxy, arm_pub, GRASP_POS, hand, 3.5, "下降抓取", use_target_poses):
+    if not _move_to(ik_proxy, arm_pub, GRASP_POS, hand, 2.5, "垂直下降抓取", use_target_poses):
         return False
 
     if not skip_gripper:
