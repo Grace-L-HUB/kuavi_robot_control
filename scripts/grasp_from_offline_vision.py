@@ -70,7 +70,8 @@ RETREAT_BACK_M = 0.08
 RETREAT_LIFT_Z = 0.05
 # 抓取前：三段位姿（左上方 → 正上方 → 垂直下降），避免侧向撞到瓶身
 # 优先用 APPROACH_ABOVE_Z_TARGET（base 绝对高度）；为 None 时用相对偏移 APPROACH_ABOVE_Z
-APPROACH_ABOVE_Z_TARGET = -0.145
+# 正上方/上提绝对高度（base Z，负值越大越低）；原 -0.145 略超 IK 范围，降至 -0.170
+APPROACH_ABOVE_Z_TARGET = -0.170
 APPROACH_ABOVE_Z = 0.30
 # 第一段「左上方」：须与正上方在 X/Y/Z 上均有明显差值，否则从待机位看去像直达正上方
 USE_THREE_STAGE_APPROACH = True
@@ -115,13 +116,11 @@ DEFAULT_GRASP_JSON = _SCRIPT_DIR / "grasp_target.json"
 
 PRE_GRASP: Tuple[float, float, float] = (0.0, 0.0, 0.0)
 APPROACH_UPPER_LEFT: Tuple[float, float, float] = (0.0, 0.0, 0.0)
-APPROACH_ABOVE_TRANSIT: Tuple[float, float, float] = (0.0, 0.0, 0.0)
 APPROACH_ABOVE: Tuple[float, float, float] = (0.0, 0.0, 0.0)
 GRASP_POS: Tuple[float, float, float] = (0.0, 0.0, 0.0)
 LIFT_POS: Tuple[float, float, float] = (0.0, 0.0, 0.0)
 RETREAT: Tuple[float, float, float] = (0.0, 0.0, 0.0)
 ACTIVE_GRASP_QUAT = list(GRASP_QUAT_RIGHT)
-_LAST_IK_Q_ARM: Optional[List[float]] = None
 
 
 def _grasp_claw_hand(hand: str) -> str:
@@ -282,20 +281,12 @@ def resolve_grasp_poses_arm_base(
     else:
         approach_upper_left = approach_above
 
-    # 第2段拆成「高位平移至抓取 XY」再下降，避免斜向一步到位导致 IK 失败
-    approach_above_transit = (
-        grasp[0],
-        grasp[1],
-        approach_upper_left[2] if use_three else approach_above[2],
-    )
-
     return {
         "camera_coord_m": list(point_cam),
         "base_target_m": list(base),
         "arm_coord_m": list(grasp),
         "pre_grasp": list(pre),
         "approach_upper_left": list(approach_upper_left),
-        "approach_above_transit": list(approach_above_transit),
         "approach_above": list(approach_above),
         "grasp": list(grasp),
         "lift": list(lift),
@@ -403,17 +394,7 @@ def _resolve_ik_proxy():
             _log(f"[IK] 不可用 {name}: {e}")
     raise RuntimeError(f"未找到 IK 服务: {last_err}")
 
-
-
-def _solve_ik(
-    ik_proxy,
-    pos,
-    hand: str,
-    *,
-    orientation: str = "grasp",
-    use_prev_q0: bool = True,
-):
-    global _LAST_IK_Q_ARM
+def _solve_ik(ik_proxy, pos, hand: str):
     import numpy as np
     from motion_capture_ik.msg import twoArmHandPoseCmd
 
@@ -424,20 +405,17 @@ def _solve_ik(
 
     grasp_q = np.array(ACTIVE_GRASP_QUAT, dtype=float)
     down_q = np.array(PALM_DOWN_QUAT, dtype=float)
-    active_q = grasp_q if orientation == "grasp" else down_q
 
     left_pos = list(INACTIVE_LEFT_POS)
     right_pos = list(INACTIVE_RIGHT_POS)
     if hand == "left":
         left_pos = list(pos)
-        left_q = active_q
+        left_q = grasp_q
         right_q = down_q
-        q0_slice = slice(0, 7)
     else:
         right_pos = list(pos)
-        right_q = active_q
+        right_q = grasp_q
         left_q = down_q
-        q0_slice = slice(7, 14)
 
     req.hand_poses.left_pose.pos_xyz = np.array(left_pos, dtype=float)
     req.hand_poses.left_pose.quat_xyzw = left_q
@@ -446,25 +424,16 @@ def _solve_ik(
     req.hand_poses.right_pose.quat_xyzw = right_q
     req.hand_poses.right_pose.elbow_pos_xyz = zero3
 
-    if use_prev_q0 and _LAST_IK_Q_ARM is not None and len(_LAST_IK_Q_ARM) >= 14:
-        req.joint_angles_as_q0 = True
-        seed = np.array(_LAST_IK_Q_ARM[q0_slice], dtype=float)
-        if hand == "left":
-            req.hand_poses.left_pose.joint_angles = seed
-        else:
-            req.hand_poses.right_pose.joint_angles = seed
-
     try:
         resp = _call_with_retry(lambda: ik_proxy(req), "IK", retries=2, pause=1.5)
     except Exception as e:
-        _log(f"[IK] 服务通信失败 pos={pos} orient={orientation}: {e}")
+        _log(f"[IK] 服务通信失败 pos={pos}: {e}")
         return None
 
     if not resp.success:
-        _log(f"[IK] 求解失败 pos={pos} orient={orientation}")
+        _log(f"[IK] 求解失败 pos={pos}")
         return None
-    _log(f"[IK] 成功 orient={orientation} time_cost={getattr(resp, 'time_cost', '?')}ms")
-    _LAST_IK_Q_ARM = list(resp.q_arm)
+    _log(f"[IK] 成功 time_cost={getattr(resp, 'time_cost', '?')}ms")
     return list(resp.q_arm)
 
 
@@ -537,12 +506,11 @@ def _log_waypoint_delta(a: tuple, b: tuple, label: str) -> None:
 
 
 def _move_to(ik_proxy, arm_pub, pos, hand: str, duration: float, label: str,
-             use_target_poses: bool, hold_s: float = 0.0,
-             orientation: str = "grasp") -> bool:
+             use_target_poses: bool, hold_s: float = 0.0) -> bool:
     import rospy
 
-    _log(f"[运动] {label} -> ({pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f}) orient={orientation}")
-    q = _solve_ik(ik_proxy, pos, hand, orientation=orientation, use_prev_q0=True)
+    _log(f"[运动] {label} -> ({pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f})")
+    q = _solve_ik(ik_proxy, pos, hand)
     if q is None:
         return False
     if use_target_poses and arm_pub is not None:
@@ -553,47 +521,6 @@ def _move_to(ik_proxy, arm_pub, pos, hand: str, duration: float, label: str,
         _log(f"[运动] {label} 到位，保持 {hold_s:.1f}s ...")
         rospy.sleep(hold_s)
     return True
-
-
-def _move_to_ik_fallback(
-    ik_proxy,
-    arm_pub,
-    targets: List[Tuple[tuple, str, str]],
-    hand: str,
-    duration: float,
-    label: str,
-    use_target_poses: bool,
-    hold_s: float = 0.0,
-) -> bool:
-    """依次尝试多个位姿/姿态组合，解决正上方等临界点位 IK 失败。"""
-    import rospy
-
-    last_pos = None
-    for idx, (pos, orient, note) in enumerate(targets, start=1):
-        attempt = f"{label} 候选{idx}/{len(targets)} ({note})"
-        _log(f"[运动] {attempt} -> ({pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f}) orient={orient}")
-        q = _solve_ik(
-            ik_proxy, pos, hand,
-            orientation=orient,
-            use_prev_q0=(idx == 1),
-        )
-        if q is None:
-            last_pos = pos
-            continue
-        if use_target_poses and arm_pub is not None:
-            _publish_arm_timed(arm_pub, q, duration)
-        else:
-            _publish_arm_traj(q, duration)
-        if hold_s > 0.0:
-            _log(f"[运动] {attempt} 到位，保持 {hold_s:.1f}s ...")
-            rospy.sleep(hold_s)
-        if idx > 1:
-            _log(f"[运动] {label} 使用备选位姿成功")
-        return True
-
-    if last_pos is not None:
-        _log(f"[IK] {label} 全部候选失败，末次尝试 pos={last_pos}")
-    return False
 
 
 def _claw_cmd(hand: str, position: int, velocity: int = GRASP_CLAW_VELOCITY,
@@ -633,14 +560,12 @@ def _load_camera_point_from_json(path: Path) -> tuple:
 
 
 def _apply_grasp_coordinates(camera_point: tuple, hand: str) -> None:
-    global PRE_GRASP, APPROACH_UPPER_LEFT, APPROACH_ABOVE_TRANSIT, APPROACH_ABOVE
-    global GRASP_POS, LIFT_POS, RETREAT
+    global PRE_GRASP, APPROACH_UPPER_LEFT, APPROACH_ABOVE, GRASP_POS, LIFT_POS, RETREAT
     global ACTIVE_GRASP_QUAT, INACTIVE_LEFT_POS, INACTIVE_RIGHT_POS
 
     poses = resolve_grasp_poses_arm_base(camera_point, hand=hand)
     PRE_GRASP = tuple(poses["pre_grasp"])
     APPROACH_UPPER_LEFT = tuple(poses["approach_upper_left"])
-    APPROACH_ABOVE_TRANSIT = tuple(poses["approach_above_transit"])
     APPROACH_ABOVE = tuple(poses["approach_above"])
     GRASP_POS = tuple(poses["grasp"])
     LIFT_POS = tuple(poses["lift"])
@@ -660,9 +585,7 @@ def _apply_grasp_coordinates(camera_point: tuple, hand: str) -> None:
     _log(f"[坐标] 预抓取 (m): {PRE_GRASP}")
     if USE_THREE_STAGE_APPROACH:
         _log(f"[坐标] 左上方就位 (m): {APPROACH_UPPER_LEFT}")
-        _log(f"[坐标] 正上方平移 (m): {APPROACH_ABOVE_TRANSIT}")
-        _log_waypoint_delta(APPROACH_UPPER_LEFT, APPROACH_ABOVE_TRANSIT, "左上方→正上方平移")
-        _log_waypoint_delta(APPROACH_ABOVE_TRANSIT, APPROACH_ABOVE, "正上方平移→正上方就位")
+        _log_waypoint_delta(APPROACH_UPPER_LEFT, APPROACH_ABOVE, "左上方→正上方")
         _log_waypoint_delta(APPROACH_ABOVE, GRASP_POS, "正上方→抓取点")
     _log(f"[坐标] 正上方就位 (m): {APPROACH_ABOVE}")
     _log(f"[坐标] 上提 (m): {LIFT_POS}")
@@ -674,10 +597,8 @@ def _apply_grasp_coordinates(camera_point: tuple, hand: str) -> None:
 def run_grasp(hand: str, grasp_width: int, grasp_effort: float,
               skip_gripper: bool, skip_arm_mode: bool,
               camera_point: tuple) -> bool:
-    global _LAST_IK_Q_ARM
     import rospy
 
-    _LAST_IK_Q_ARM = None
     claw_hand = _grasp_claw_hand(hand)
     rospy.init_node("grasp_from_offline_vision", anonymous=True)
     _apply_grasp_coordinates(camera_point, hand)
@@ -726,46 +647,25 @@ def run_grasp(hand: str, grasp_width: int, grasp_effort: float,
         _log("========== 第 1/3 段：左上方（高 + 左 + 后） ==========")
         if not _move_to(
             ik_proxy, arm_pub, APPROACH_UPPER_LEFT, hand, APPROACH_STAGE1_DURATION_S,
-            "左上方就位", use_target_poses, hold_s=hold, orientation="palm_down",
+            "左上方就位", use_target_poses, hold_s=hold,
         ):
             return False
-        _log("========== 第 2/3 段：平移至正上方并下降就位 ==========")
+        _log("========== 第 2/3 段：平移至正上方 ==========")
         if not _move_to(
-            ik_proxy, arm_pub, APPROACH_ABOVE_TRANSIT, hand, APPROACH_STAGE2_DURATION_S * 0.55,
-            "正上方平移(高位)", use_target_poses, orientation="palm_down",
-        ):
-            return False
-        lat_sign = 1.0 if hand == "left" else -1.0
-        above_targets = [
-            (APPROACH_ABOVE, "palm_down", "目标正上方"),
-            ((APPROACH_ABOVE[0], APPROACH_ABOVE[1], APPROACH_ABOVE[2] + 0.04),
-             "palm_down", "正上方抬高4cm"),
-            ((APPROACH_ABOVE[0] - 0.03, APPROACH_ABOVE[1], APPROACH_ABOVE[2]),
-             "palm_down", "正上方略后退"),
-            ((APPROACH_ABOVE[0], APPROACH_ABOVE[1] + lat_sign * 0.04, APPROACH_ABOVE[2]),
-             "palm_down", "正上方略偏左"),
-        ]
-        if not _move_to_ik_fallback(
-            ik_proxy, arm_pub, above_targets, hand, APPROACH_STAGE2_DURATION_S * 0.45,
+            ik_proxy, arm_pub, APPROACH_ABOVE, hand, APPROACH_STAGE2_DURATION_S,
             "正上方就位", use_target_poses, hold_s=hold,
         ):
             return False
         _log("========== 第 3/3 段：垂直下降抓取 ==========")
         if not _move_to(
             ik_proxy, arm_pub, GRASP_POS, hand, APPROACH_STAGE3_DURATION_S,
-            "垂直下降抓取", use_target_poses, orientation="grasp",
+            "垂直下降抓取", use_target_poses,
         ):
             return False
     else:
-        if not _move_to(
-            ik_proxy, arm_pub, APPROACH_ABOVE, hand, 3.5, "正上方就位",
-            use_target_poses, orientation="palm_down",
-        ):
+        if not _move_to(ik_proxy, arm_pub, APPROACH_ABOVE, hand, 3.5, "正上方就位", use_target_poses):
             return False
-        if not _move_to(
-            ik_proxy, arm_pub, GRASP_POS, hand, 3.5, "垂直下降抓取",
-            use_target_poses, orientation="grasp",
-        ):
+        if not _move_to(ik_proxy, arm_pub, GRASP_POS, hand, 3.5, "垂直下降抓取", use_target_poses):
             return False
 
     if not skip_gripper:
