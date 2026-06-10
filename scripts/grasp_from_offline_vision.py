@@ -68,6 +68,11 @@ PRE_GRASP_BACK_M = 0.10
 PRE_GRASP_LIFT_Z = 0.03
 RETREAT_BACK_M = 0.08
 RETREAT_LIFT_Z = 0.05
+# 放开流程：先保持抓取高度水平后撤，再松爪，最后上提回零（避免垂直上提/原位放开带倒瓶子）
+POST_GRASP_HORIZONTAL_RELEASE = True
+RELEASE_RETREAT_BACK_M = 0.12
+RELEASE_RETREAT_DURATION_S = 2.5
+RELEASE_LIFT_DURATION_S = 3.0
 # 正上方/上提高度：取「绝对高度」与「抓取点上方 clearance」中较低者（更在 IK 范围内）
 APPROACH_ABOVE_Z_TARGET = -0.170
 APPROACH_ABOVE_CLEARANCE_M = 0.18
@@ -123,6 +128,8 @@ APPROACH_UPPER_LEFT: Tuple[float, float, float] = (0.0, 0.0, 0.0)
 APPROACH_ABOVE_TRANSIT: Tuple[float, float, float] = (0.0, 0.0, 0.0)
 APPROACH_ABOVE: Tuple[float, float, float] = (0.0, 0.0, 0.0)
 GRASP_POS: Tuple[float, float, float] = (0.0, 0.0, 0.0)
+RELEASE_RETREAT: Tuple[float, float, float] = (0.0, 0.0, 0.0)
+RELEASE_LIFT: Tuple[float, float, float] = (0.0, 0.0, 0.0)
 LIFT_POS: Tuple[float, float, float] = (0.0, 0.0, 0.0)
 RETREAT: Tuple[float, float, float] = (0.0, 0.0, 0.0)
 ACTIVE_GRASP_QUAT = list(GRASP_QUAT_RIGHT)
@@ -158,6 +165,7 @@ def _build_config_dict() -> Dict:
             "pre_grasp_lift_z": PRE_GRASP_LIFT_Z,
             "retreat_back_m": RETREAT_BACK_M,
             "retreat_lift_z": RETREAT_LIFT_Z,
+            "release_retreat_back_m": RELEASE_RETREAT_BACK_M,
             "approach_above_z": APPROACH_ABOVE_Z,
             "approach_above_z_target": APPROACH_ABOVE_Z_TARGET,
             "approach_above_clearance_m": APPROACH_ABOVE_CLEARANCE_M,
@@ -277,6 +285,8 @@ def resolve_grasp_poses_arm_base(
     else:
         lift = (grasp[0], grasp[1], grasp[2] + post_lift)
     retreat = (grasp[0] - ret_back, grasp[1], lift[2] + ret_lift)
+    rel_back = float(off.get("release_retreat_back_m", 0.12))
+    release_retreat = (grasp[0] - rel_back, grasp[1], grasp[2])
 
     use_three = bool(off.get("use_three_stage_approach", True))
     lateral = float(off.get("approach_upper_left_lateral_m", 0.22))
@@ -307,6 +317,7 @@ def resolve_grasp_poses_arm_base(
         "approach_above_transit": list(approach_above_transit),
         "approach_above": list(approach_above),
         "grasp": list(grasp),
+        "release_retreat": list(release_retreat),
         "lift": list(lift),
         "retreat": list(retreat),
         "transform_method": "embedded_static_pitch",
@@ -566,13 +577,15 @@ def _finish_release_and_home(
     arm_pub,
     use_target_poses: bool,
     skip_gripper: bool,
+    *,
+    open_claw: bool = True,
 ) -> None:
     import rospy
 
     if not POST_GRASP_RELEASE_AND_HOME:
         return
-    _log("========== 结束：放开夹爪 + 双臂回零位 ==========")
-    if not skip_gripper:
+    _log("========== 结束：双臂回零位 ==========")
+    if open_claw and not skip_gripper:
         _claw_cmd(claw_hand, 0)
         rospy.sleep(0.5)
     _publish_arm_home(arm_pub, use_target_poses, ARM_HOME_DURATION_S)
@@ -643,7 +656,7 @@ def _load_camera_point_from_json(path: Path) -> tuple:
 
 def _apply_grasp_coordinates(camera_point: tuple, hand: str) -> None:
     global PRE_GRASP, APPROACH_UPPER_LEFT, APPROACH_ABOVE_TRANSIT, APPROACH_ABOVE
-    global GRASP_POS, LIFT_POS, RETREAT
+    global GRASP_POS, RELEASE_RETREAT, RELEASE_LIFT, LIFT_POS, RETREAT
     global ACTIVE_GRASP_QUAT, INACTIVE_LEFT_POS, INACTIVE_RIGHT_POS
 
     poses = resolve_grasp_poses_arm_base(camera_point, hand=hand)
@@ -652,7 +665,9 @@ def _apply_grasp_coordinates(camera_point: tuple, hand: str) -> None:
     APPROACH_ABOVE_TRANSIT = tuple(poses["approach_above_transit"])
     APPROACH_ABOVE = tuple(poses["approach_above"])
     GRASP_POS = tuple(poses["grasp"])
+    RELEASE_RETREAT = tuple(poses["release_retreat"])
     LIFT_POS = tuple(poses["lift"])
+    RELEASE_LIFT = (RELEASE_RETREAT[0], RELEASE_RETREAT[1], LIFT_POS[2])
     RETREAT = tuple(poses["retreat"])
     ACTIVE_GRASP_QUAT = list(poses["grasp_quat_xyzw"])
 
@@ -666,6 +681,9 @@ def _apply_grasp_coordinates(camera_point: tuple, hand: str) -> None:
     _log(f"[坐标] 相机 optical (m): {camera_point}")
     _log(f"[坐标] 视觉中心 (m): {poses['base_target_m']}")
     _log(f"[坐标] 抓取点 (m): {GRASP_POS}")
+    if POST_GRASP_HORIZONTAL_RELEASE:
+        _log(f"[坐标] 水平后撤放开 (m): {RELEASE_RETREAT}")
+        _log(f"[坐标] 松爪后上提 (m): {RELEASE_LIFT}")
     _log(f"[坐标] 预抓取 (m): {PRE_GRASP}")
     if USE_THREE_STAGE_APPROACH:
         _log(f"[坐标] 左上方就位 (m): {APPROACH_UPPER_LEFT}")
@@ -696,7 +714,7 @@ def run_grasp(hand: str, grasp_width: int, grasp_effort: float,
     if hand == "left":
         _log("[策略] --hand left：左手 IK 双臂运动，抓取由 left_claw 开合")
     if USE_THREE_STAGE_APPROACH:
-        _log("[策略] 三段位姿：左上方(高+左+后) → 正上方 → 垂直下降 → 闭合 → 上提 → 后撤")
+        _log("[策略] 三段位姿：左上方 → 正上方 → 下降 → 闭合 → 水平后撤放开 → 上提 → 回零")
         _log(
             f"[策略] 段间停顿 {APPROACH_STAGE_HOLD_S}s；"
             f"偏移 lateral={APPROACH_UPPER_LEFT_LATERAL_M}m "
@@ -705,7 +723,9 @@ def run_grasp(hand: str, grasp_width: int, grasp_effort: float,
     else:
         _log("[策略] 垂直流程：正上方 → 下降抓取 → 闭合 → 向上提起 → 后撤")
     if POST_GRASP_RELEASE_AND_HOME:
-        _log(f"[策略] 结束后放开夹爪并回零位 ({ARM_HOME_DURATION_S}s)")
+        _log(f"[策略] 结束后回零位 ({ARM_HOME_DURATION_S}s)")
+    if POST_GRASP_HORIZONTAL_RELEASE:
+        _log(f"[策略] 放开：保持高度水平后撤 {RELEASE_RETREAT_BACK_M}m 后再松爪")
 
     if not skip_arm_mode:
         _set_arm_mode_external()
@@ -769,13 +789,32 @@ def run_grasp(hand: str, grasp_width: int, grasp_effort: float,
         _claw_cmd(claw_hand, grasp_width, effort=grasp_effort)
         rospy.sleep(1.5)
 
-    if not _move_to(ik_proxy, arm_pub, LIFT_POS, hand, 4.0, "向上提起", use_target_poses, orientation="grasp"):
-        return False
+    if POST_GRASP_HORIZONTAL_RELEASE:
+        _log("========== 放开：水平后撤（保持抓取高度） ==========")
+        if not _move_to(
+            ik_proxy, arm_pub, RELEASE_RETREAT, hand, RELEASE_RETREAT_DURATION_S,
+            "水平后撤", use_target_poses, orientation="grasp",
+        ):
+            return False
+        if not skip_gripper:
+            _claw_cmd(claw_hand, 0)
+            rospy.sleep(0.8)
+        _log("========== 松爪后上提 ==========")
+        if not _move_to(
+            ik_proxy, arm_pub, RELEASE_LIFT, hand, RELEASE_LIFT_DURATION_S,
+            "松爪后上提", use_target_poses, orientation="grasp",
+        ):
+            return False
+    else:
+        if not _move_to(ik_proxy, arm_pub, LIFT_POS, hand, 4.0, "向上提起", use_target_poses, orientation="grasp"):
+            return False
+        if not _move_to(ik_proxy, arm_pub, RETREAT, hand, 2.0, "后撤", use_target_poses, orientation="grasp"):
+            return False
+        if not skip_gripper:
+            _claw_cmd(claw_hand, 0)
+            rospy.sleep(0.5)
 
-    if not _move_to(ik_proxy, arm_pub, RETREAT, hand, 2.0, "后撤", use_target_poses, orientation="grasp"):
-        return False
-
-    _finish_release_and_home(claw_hand, arm_pub, use_target_poses, skip_gripper)
+    _finish_release_and_home(claw_hand, arm_pub, use_target_poses, skip_gripper, open_claw=False)
 
     _log(f"[完成] 抓取流程结束（IK={hand}，夹爪={claw_hand}）")
     return True
