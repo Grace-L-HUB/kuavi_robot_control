@@ -70,9 +70,11 @@ RETREAT_BACK_M = 0.08
 RETREAT_LIFT_Z = 0.05
 # 夹紧后：上提至正上方 → 保持 → 下放回抓取点 → 安全放开（水平后撤 → 松爪 → 上提 → 回零）
 POST_GRASP_HORIZONTAL_RELEASE = True
-POST_GRASP_LIFT_TO_ABOVE_DURATION_S = 3.5
+POST_GRASP_LIFT_TO_ABOVE_DURATION_S = 4.0
+POST_GRASP_LIFT_MID_DURATION_S = 2.5
 POST_GRASP_HOLD_AT_ABOVE_S = 2.0
 POST_GRASP_LOWER_TO_GRASP_DURATION_S = 3.0
+POST_GRASP_MIN_LIFT_M = 0.20
 RELEASE_RETREAT_BACK_M = 0.12
 RELEASE_RETREAT_DURATION_S = 2.5
 RELEASE_LIFT_DURATION_S = 3.0
@@ -131,6 +133,8 @@ APPROACH_UPPER_LEFT: Tuple[float, float, float] = (0.0, 0.0, 0.0)
 APPROACH_ABOVE_TRANSIT: Tuple[float, float, float] = (0.0, 0.0, 0.0)
 APPROACH_ABOVE: Tuple[float, float, float] = (0.0, 0.0, 0.0)
 GRASP_POS: Tuple[float, float, float] = (0.0, 0.0, 0.0)
+POST_GRASP_LIFT_MID: Tuple[float, float, float] = (0.0, 0.0, 0.0)
+POST_GRASP_LIFT: Tuple[float, float, float] = (0.0, 0.0, 0.0)
 RELEASE_RETREAT: Tuple[float, float, float] = (0.0, 0.0, 0.0)
 RELEASE_LIFT: Tuple[float, float, float] = (0.0, 0.0, 0.0)
 LIFT_POS: Tuple[float, float, float] = (0.0, 0.0, 0.0)
@@ -169,6 +173,7 @@ def _build_config_dict() -> Dict:
             "retreat_back_m": RETREAT_BACK_M,
             "retreat_lift_z": RETREAT_LIFT_Z,
             "release_retreat_back_m": RELEASE_RETREAT_BACK_M,
+            "post_grasp_min_lift_m": POST_GRASP_MIN_LIFT_M,
             "approach_above_z": APPROACH_ABOVE_Z,
             "approach_above_z_target": APPROACH_ABOVE_Z_TARGET,
             "approach_above_clearance_m": APPROACH_ABOVE_CLEARANCE_M,
@@ -289,6 +294,11 @@ def resolve_grasp_poses_arm_base(
         lift = (grasp[0], grasp[1], grasp[2] + post_lift)
     retreat = (grasp[0] - ret_back, grasp[1], lift[2] + ret_lift)
     rel_back = float(off.get("release_retreat_back_m", 0.12))
+    min_lift = float(off.get("post_grasp_min_lift_m", 0.20))
+    lift_z = max(approach_above[2], grasp[2] + min_lift)
+    post_grasp_lift = (grasp[0], grasp[1], lift_z)
+    mid_lift_z = grasp[2] + min_lift * 0.5
+    post_grasp_lift_mid = (grasp[0], grasp[1], mid_lift_z)
     release_retreat = (grasp[0] - rel_back, grasp[1], grasp[2])
 
     use_three = bool(off.get("use_three_stage_approach", True))
@@ -320,6 +330,8 @@ def resolve_grasp_poses_arm_base(
         "approach_above_transit": list(approach_above_transit),
         "approach_above": list(approach_above),
         "grasp": list(grasp),
+        "post_grasp_lift_mid": list(post_grasp_lift_mid),
+        "post_grasp_lift": list(post_grasp_lift),
         "release_retreat": list(release_retreat),
         "lift": list(lift),
         "retreat": list(retreat),
@@ -426,7 +438,7 @@ def _resolve_ik_proxy():
             _log(f"[IK] 不可用 {name}: {e}")
     raise RuntimeError(f"未找到 IK 服务: {last_err}")
 
-def _solve_ik(ik_proxy, pos, hand: str, *, use_prev_q0: bool = True):
+def _solve_ik(ik_proxy, pos, hand: str, *, use_prev_q0: bool = True, use_grasp_quat: bool = True):
     global _LAST_IK_Q_ARM
     import numpy as np
     from motion_capture_ik.msg import twoArmHandPoseCmd
@@ -438,17 +450,18 @@ def _solve_ik(ik_proxy, pos, hand: str, *, use_prev_q0: bool = True):
 
     grasp_q = np.array(ACTIVE_GRASP_QUAT, dtype=float)
     down_q = np.array(PALM_DOWN_QUAT, dtype=float)
+    active_q = grasp_q if use_grasp_quat else down_q
 
     left_pos = list(INACTIVE_LEFT_POS)
     right_pos = list(INACTIVE_RIGHT_POS)
     if hand == "left":
         left_pos = list(pos)
-        left_q = grasp_q
+        left_q = active_q
         right_q = down_q
         q0_slice = slice(0, 7)
     else:
         right_pos = list(pos)
-        right_q = grasp_q
+        right_q = active_q
         left_q = down_q
         q0_slice = slice(7, 14)
 
@@ -521,8 +534,36 @@ def _publish_arm_timed(pub, q_rad, duration: float) -> None:
     msg = armTargetPoses()
     msg.times = [float(duration)]
     msg.values = _rad_to_deg_14(q_rad)
-    pub.publish(msg)
+    for _ in range(3):
+        pub.publish(msg)
+        rospy.sleep(0.05)
     rospy.sleep(duration + 0.5)
+
+
+def _move_vertical_lift(
+    ik_proxy, arm_pub, pos, hand: str, duration: float, label: str,
+    use_target_poses: bool, from_pos: tuple,
+) -> bool:
+    """夹紧后纯垂直上提：先中点再目标，抓取姿态失败时尝试掌心朝下。"""
+    import rospy
+
+    dz = pos[2] - from_pos[2]
+    _log(f"[运动] {label} -> ({pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f}) ΔZ={dz:+.3f}m")
+    for use_grasp in (True, False):
+        q = _solve_ik(
+            ik_proxy, pos, hand,
+            use_prev_q0=use_grasp,
+            use_grasp_quat=use_grasp,
+        )
+        if q is not None:
+            if not use_grasp:
+                _log(f"[运动] {label} 使用掌心朝下 IK")
+            if use_target_poses and arm_pub is not None:
+                _publish_arm_timed(arm_pub, q, duration)
+            else:
+                _publish_arm_traj(q, duration)
+            return True
+    return False
 
 
 def _publish_arm_traj(q_rad, duration: float) -> None:
@@ -657,7 +698,7 @@ def _load_camera_point_from_json(path: Path) -> tuple:
 
 def _apply_grasp_coordinates(camera_point: tuple, hand: str) -> None:
     global PRE_GRASP, APPROACH_UPPER_LEFT, APPROACH_ABOVE_TRANSIT, APPROACH_ABOVE
-    global GRASP_POS, RELEASE_RETREAT, RELEASE_LIFT, LIFT_POS, RETREAT
+    global GRASP_POS, POST_GRASP_LIFT_MID, POST_GRASP_LIFT, RELEASE_RETREAT, RELEASE_LIFT, LIFT_POS, RETREAT
     global ACTIVE_GRASP_QUAT, INACTIVE_LEFT_POS, INACTIVE_RIGHT_POS
 
     poses = resolve_grasp_poses_arm_base(camera_point, hand=hand)
@@ -666,6 +707,8 @@ def _apply_grasp_coordinates(camera_point: tuple, hand: str) -> None:
     APPROACH_ABOVE_TRANSIT = tuple(poses["approach_above_transit"])
     APPROACH_ABOVE = tuple(poses["approach_above"])
     GRASP_POS = tuple(poses["grasp"])
+    POST_GRASP_LIFT_MID = tuple(poses["post_grasp_lift_mid"])
+    POST_GRASP_LIFT = tuple(poses["post_grasp_lift"])
     RELEASE_RETREAT = tuple(poses["release_retreat"])
     LIFT_POS = tuple(poses["lift"])
     RELEASE_LIFT = (RELEASE_RETREAT[0], RELEASE_RETREAT[1], LIFT_POS[2])
@@ -683,7 +726,8 @@ def _apply_grasp_coordinates(camera_point: tuple, hand: str) -> None:
     _log(f"[坐标] 视觉中心 (m): {poses['base_target_m']}")
     _log(f"[坐标] 抓取点 (m): {GRASP_POS}")
     if POST_GRASP_HORIZONTAL_RELEASE:
-        _log(f"[坐标] 夹紧后上提正上方 (m): {APPROACH_ABOVE}")
+        _log(f"[坐标] 夹紧后上提中点 (m): {POST_GRASP_LIFT_MID}")
+        _log(f"[坐标] 夹紧后上提正上方 (m): {POST_GRASP_LIFT}")
         _log(f"[坐标] 下放抓取点 (m): {GRASP_POS}")
         _log(f"[坐标] 水平后撤放开 (m): {RELEASE_RETREAT}")
         _log(f"[坐标] 松爪后上提 (m): {RELEASE_LIFT}")
@@ -795,9 +839,14 @@ def run_grasp(hand: str, grasp_width: int, grasp_effort: float,
 
     if POST_GRASP_HORIZONTAL_RELEASE:
         _log("========== 夹紧后上提至正上方（展示抓稳） ==========")
-        if not _move_to(
-            ik_proxy, arm_pub, APPROACH_ABOVE, hand, POST_GRASP_LIFT_TO_ABOVE_DURATION_S,
-            "上提至正上方", use_target_poses,
+        if not _move_vertical_lift(
+            ik_proxy, arm_pub, POST_GRASP_LIFT_MID, hand, POST_GRASP_LIFT_MID_DURATION_S,
+            "垂直上提(中点)", use_target_poses, GRASP_POS,
+        ):
+            return False
+        if not _move_vertical_lift(
+            ik_proxy, arm_pub, POST_GRASP_LIFT, hand, POST_GRASP_LIFT_TO_ABOVE_DURATION_S,
+            "垂直上提(正上方)", use_target_poses, POST_GRASP_LIFT_MID,
         ):
             return False
         _log(f"[运动] 正上方就位，保持 {POST_GRASP_HOLD_AT_ABOVE_S}s ...")
