@@ -88,6 +88,11 @@ POST_GRASP_LIFT_Z = 0.22
 # 是否执行旧版后方预抓取（与三段位姿互斥，一般保持 False）
 USE_PRE_GRASP = False
 
+# 抓取结束后：放开夹爪 + 双臂回零位（等同 rostopic pub /kuavo_arm_target_poses ... values 全 0）
+POST_GRASP_RELEASE_AND_HOME = True
+ARM_HOME_DURATION_S = 2.0
+ARM_HOME_JOINT_DEG = [0.0] * 14
+
 # 姿态 quat_xyzw（相对 IK 基座）
 PALM_DOWN_QUAT = [0.0, -0.70682518, 0.0, 0.70738827]
 GRASP_QUAT_RIGHT = [-0.5002, -0.4998, -0.4998, 0.5002]
@@ -497,6 +502,56 @@ def _publish_arm_traj(q_rad, duration: float) -> None:
     rospy.sleep(duration)
 
 
+def _publish_arm_home(arm_pub, use_target_poses: bool, duration: float) -> None:
+    """发布双臂回零位目标（14 关节角全 0°，与官方 rostopic 示例一致）。"""
+    import rospy
+
+    home_deg = list(ARM_HOME_JOINT_DEG)
+    _log(f"[结束] 双臂回零位 times=[{duration}] values={home_deg}")
+    if use_target_poses and arm_pub is not None:
+        from kuavo_sdk.msg import armTargetPoses
+
+        msg = armTargetPoses()
+        msg.times = [float(duration)]
+        msg.values = home_deg
+        for _ in range(3):
+            arm_pub.publish(msg)
+            rospy.sleep(0.05)
+        rospy.sleep(duration + 0.5)
+        return
+
+    from sensor_msgs.msg import JointState
+
+    pub = rospy.Publisher("/kuavo_arm_traj", JointState, queue_size=10, latch=True)
+    _wait_for_connections(pub, timeout=5.0)
+    msg = JointState()
+    msg.name = [f"arm_joint_{i}" for i in range(1, 15)]
+    msg.header.stamp = rospy.Time.now()
+    msg.position = home_deg
+    for _ in range(3):
+        pub.publish(msg)
+        rospy.sleep(0.1)
+    rospy.sleep(duration)
+    _log("[结束] 已通过 /kuavo_arm_traj 回零位")
+
+
+def _finish_release_and_home(
+    claw_hand: str,
+    arm_pub,
+    use_target_poses: bool,
+    skip_gripper: bool,
+) -> None:
+    import rospy
+
+    if not POST_GRASP_RELEASE_AND_HOME:
+        return
+    _log("========== 结束：放开夹爪 + 双臂回零位 ==========")
+    if not skip_gripper:
+        _claw_cmd(claw_hand, 0)
+        rospy.sleep(0.5)
+    _publish_arm_home(arm_pub, use_target_poses, ARM_HOME_DURATION_S)
+
+
 def _log_waypoint_delta(a: tuple, b: tuple, label: str) -> None:
     dx = b[0] - a[0]
     dy = b[1] - a[1]
@@ -614,6 +669,8 @@ def run_grasp(hand: str, grasp_width: int, grasp_effort: float,
         )
     else:
         _log("[策略] 垂直流程：正上方 → 下降抓取 → 闭合 → 向上提起 → 后撤")
+    if POST_GRASP_RELEASE_AND_HOME:
+        _log(f"[策略] 结束后放开夹爪并回零位 ({ARM_HOME_DURATION_S}s)")
 
     if not skip_arm_mode:
         _set_arm_mode_external()
@@ -677,6 +734,8 @@ def run_grasp(hand: str, grasp_width: int, grasp_effort: float,
 
     if not _move_to(ik_proxy, arm_pub, RETREAT, hand, 2.0, "后撤", use_target_poses):
         return False
+
+    _finish_release_and_home(claw_hand, arm_pub, use_target_poses, skip_gripper)
 
     _log(f"[完成] 抓取流程结束（IK={hand}，夹爪={claw_hand}）")
     return True
