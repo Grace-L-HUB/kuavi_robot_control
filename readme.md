@@ -1,236 +1,283 @@
-# 基于华为昇腾平台的轮式机器人语音交互与抓取递送系统
+# Kuavi 语音视觉抓取系统
 
-## 项目简介
+基于华为 Atlas 200I DK A2 的轮式机器人语音交互与抓取方案。当前已验证的闭环为 **上位机采图 → Atlas 语音/视觉推理 → 下位机 ROS 抓取**：Atlas 侧不依赖 ROS，产出 `grasp_target.json`；下位机读取其中的 `camera_coord_m` 完成机械臂 IK 与夹爪控制。
 
-本项目基于华为 Atlas 200I DK A2 开发板，实现了一套可通过自然语言控制的轮式机器人语音交互与抓取递送系统。系统集成离线语音识别、语义理解、视觉目标检测与三维定位、机械臂抓取及自主导航等模块，打通从“语音指令输入”到“物品抓取递送”的全流程。
+## 系统角色
 
-## 系统架构
+| 节点 | 硬件/环境 | 职责 |
+|------|-----------|------|
+| **上位机** | 轮臂机器人工控机 / 开发 PC | 采集 RGB-D 图像、相机内参；录制语音；将数据包拷贝到 Atlas |
+| **Atlas 200I DK A2** | 昇腾 NPU 开发板 | Whisper ASR + 语义解析 + YOLO 检测 + 深度反投影 → `grasp_target.json` |
+| **下位机** | Kuavo ROS 机器人 | 载入控制脚本，读取 JSON，执行三段位姿抓取与安全放开 |
+
+## 总体数据流
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                      用户语音指令                                │
-│                    "把红色的杯子拿给我"                          │
-└─────────────────────────────────────────────────────────────────┘
-                                │
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 上位机（机器人/PC）                                                       │
+│  • color_image.png / depth_image.png                                    │
+│  • camera_info.txt / camera_info1.txt（color/depth 内参）               │
+│  • record*.m4a（语音「拿瓶子」等）                                         │
+└───────────────────────────────┬─────────────────────────────────────────┘
+                                │ U 盘 / scp 拷贝到 instance/
                                 ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                    华为 Atlas 200I DK A2                         │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐       │
-│  │ Whisper模型   │ ──▶│ 语义解析     │ ──▶│ 任务调度     │       │
-│  │ (语音转文字)  │    │ (意图提取)   │    │              │       │
-│  └──────────────┘    └──────────────┘    └──────────────┘       │
-│         │                                       │                │
-│         ▼                                       ▼                │
-│  ┌──────────────┐                      ┌──────────────┐        │
-│  │ YOLOv8模型   │                      │ 坐标变换与IK  │        │
-│  │ (目标检测)   │                      │ (手眼标定)   │        │
-│  └──────────────┘                      └──────────────┘        │
-└─────────────────────────────────────────────────────────────────┘
-                                │
+┌─────────────────────────────────────────────────────────────────────────┐
+│ Atlas 200I（~/kuavi_robot_control）                                     │
+│  atlas_voice_grasp_pipeline.py                                          │
+│    ① 语音 → Whisper(NPU encoder + CPU decode) → 语义 → target 类别      │
+│    ② YOLOv8n(NPU .om) → bbox → 抓取像素点                               │
+│    ③ 深度采样 + 内参反投影 → camera_coord_m（相机 optical 系，米）       │
+│    ④ 写入 instance/grasp_target.json + scripts/grasp_target.json        │
+└───────────────────────────────┬─────────────────────────────────────────┘
+                                │ 拷贝 grasp_target.json + 控制脚本
                                 ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                        机器人执行层                              │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐       │
-│  │ WebSocket    │    │ ROS Topic    │    │ ROS Service  │       │
-│  │ (底盘控制)   │    │ (手臂控制)   │    │ (夹爪控制)   │       │
-│  └──────────────┘    └──────────────┘    └──────────────┘       │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 下位机（kuavo-ros-opensource/scripts/）                                  │
+│  grasp_from_offline_vision.py --hand left                               │
+│    • 读取 camera_coord_m → base 系抓取位姿                               │
+│    • 三段位姿：左上方 → 平移至正上方 → 垂直下降                           │
+│    • 夹紧 → 上提展示 → 下放 → 水平后撤松爪 → 回零                         │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## 功能模块
 
 | 模块 | 功能 | 技术方案 |
 |------|------|----------|
-| 语音交互 | 离线语音识别与唤醒 | Whisper 轻量化模型 |
-| 语义理解 | 自然语言意图解析 | BERT/Qwen-1.8B |
-| 目标检测 | 物体识别与定位 | YOLOv8n + RGB-D相机 |
-| 坐标变换 | 像素→3D坐标转换 | 相机内参 + 深度图 + 手眼标定 |
-| 机械臂控制 | 抓取姿态计算与执行 | IK逆解 + /kuavo_arm_traj |
-| 夹爪控制 | 物品抓取与释放 | /control_robot_leju_claw |
-| 底盘导航 | 自主移动与定位 | WebSocket + SLAM |
+| 语音交互 | 离线语音识别 | Whisper encoder NPU + CPU decode |
+| 语义理解 | 意图与目标类别解析 | 规则 NLU + 同音纠错（`semantic_parser.py`） |
+| 目标检测 | 物体识别与定位 | YOLOv8n NPU（`.om`）+ RGB 图 |
+| 坐标转换 | 像素 → 3D 坐标 | 相机内参 + 深度图反投影（camera optical 系） |
+| 机械臂控制 | 抓取姿态与轨迹 | IK + `/kuavo_arm_traj` |
+| 夹爪控制 | 抓取与释放 | `/control_robot_leju_claw` |
 
 ## 项目结构
 
+PC 开发与 Atlas 部署共用本仓库；部署到 Atlas 时通常同步为 `~/kuavi_robot_control`。
+
 ```
-/home/HwHiAiUser/
-├── robot_control/                 # 机器人硬件控制代码
-│   ├── WooshWebSocketClient.py   # 底盘WebSocket控制
-│   ├── arm_controller.py          # 机械臂ROS控制
-│   ├── gripper_controller.py      # 夹爪ROS控制
-│   └── config/
-│       └── robot_config.yaml      # 机器人IP、端口等配置
-│
-├── vision_lim/                    # AI模型推理代码（语音/视觉/坐标）
-│   ├── asr_backends/              # ASR 可替换后端（Whisper 本地 / 昇腾占位）
-│   ├── detection.py               # YOLO目标检测（待补充）
-│   ├── speech_recognition.py      # 语音识别入口（读 config 选择后端）
-│   ├── semantic_parser.py         # 语义解析（当前为规则版）
-│   ├── audio_record.py            # 麦克风录制为 WAV（16k 单声道）
-│   ├── voice_pipeline.py          # 语音文件→任务 JSON（串 ASR + NLU）
-│   ├── coordinate_transform.py    # 坐标变换（像素→3D）（待补充）
-│   └── utils.py                   # 图像预处理工具（待补充）
+Kuavi_bot_control/
+├── instance/                          # 上位机采集数据（输入/输出）
+│   ├── color_image.png
+│   ├── depth_image.png
+│   ├── camera_info.txt                # color camera_info
+│   ├── camera_info1.txt               # depth camera_info
+│   ├── record5.m4a                    # 语音指令
+│   └── grasp_target.json              # Atlas 输出（给下位机）
 │
 ├── config/
-│   └── asr.yaml                   # ASR 后端与 Whisper 参数（上板后改 backend）
-├── scripts/
-│   └── demo_voice_pipeline.py     # 音频→文本→JSON 演示脚本
-├── samples/                       # 放置测试用 wav（可与 PC/板子共用）
+│   ├── asr_atlas_npu.yaml             # Atlas NPU ASR（Whisper encoder.om）
+│   ├── asr.yaml                       # PC 侧 ASR 配置
+│   └── vision.yaml                    # YOLO NPU/CPU 自动选择
 │
-├── ascend_models/                 # 昇腾.om格式模型文件
-│   ├── yolov8n.om                 # YOLO目标检测模型
-│   ├── whisper.om                 # Whisper语音模型
-│   └── bert.om                    # 语义理解模型
+├── ascend_models/
+│   ├── whisper_encoder.om
+│   └── yolov8n.om
 │
-├── calibration/                   # 标定文件
-│   ├── camera_intrinsics.yaml     # 相机内参
-│   └── hand_eye_calibration.yaml  # 手眼标定矩阵
+├── vision_lim/                        # 语音 / 视觉 / 坐标模块
+│   ├── voice_pipeline.py              # ASR + NLU
+│   ├── semantic_parser.py             # 意图解析与同音纠错
+│   ├── yolo_detect.py                 # NPU/CPU YOLO 统一入口
+│   ├── camera_info_parser.py          # 解析 camera_info.txt
+│   └── asr_backends/ascend_om.py      # Whisper NPU 后端
 │
-├── launch/                        # ROS启动文件
-│   └── grasp_system.launch        # 系统主启动文件
+├── robot_control/                     # 下位机控制参考与接口说明
+│   └── interface.md
 │
-└── README.md                      # 本文件
+└── scripts/
+    ├── activate_kuavi_atlas.sh        # Atlas 每次运行前 source
+    ├── atlas_voice_grasp_pipeline.py  # Atlas 端到端流水线（核心）
+    └── grasp_from_offline_vision.py   # 下位机抓取脚本（可单独拷贝）
 ```
 
 ## 环境要求
 
-### 硬件
-- **开发板**：华为 Atlas 200I DK A2（Ubuntu 20.04）
-- **机器人**：轮臂系列机器人（配备RGB-D相机、7轴机械臂、二指夹爪）
-- **网络**：开发板与机器人位于同一局域网
+| 节点 | 硬件 | 软件 |
+|------|------|------|
+| Atlas 200I DK A2 | 昇腾 310B4 NPU | Ubuntu 20.04 aarch64、CANN 6.0+、Python 3.9 venv（`~/kuavi`） |
+| 上位机 / 下位机 | 轮臂机器人 + RGB-D 相机 | ROS Noetic（下位机）、与 Atlas 可通过 U 盘/scp 交换数据 |
 
-### 软件
-- **操作系统**：Ubuntu 20.04 aarch64
-- **ROS版本**：ROS Noetic
-- **AI框架**：Ascend CANN 6.0+
-- **Python**：3.8+
+模型转换（ONNX → `.om`）见 [ascend_models/readme.md](ascend_models/readme.md)。
 
-## 安装步骤
+---
 
-### 1. 开发板环境配置
+## 第一步：上位机采集
 
-```bash
-# 更新软件源
-sudo apt update && sudo apt upgrade -y
+在机器人或联调 PC 上，与目标场景**同一时刻**保存以下文件（放入 `instance/`）：
 
-# 安装ROS Noetic
-sudo sh -c 'echo "deb http://packages.ros.org/ros/ubuntu focal main" > /etc/apt/sources.list.d/ros-latest.list'
-sudo apt-key adv --keyserver 'hkp://keyserver.ubuntu.com:80' --recv-key C1CF6E31E6BADE8868B172B4F42ED6FBAB17C654
-sudo apt install ros-noetic-desktop-full
+| 文件 | 说明 |
+|------|------|
+| `color_image.png` | RGB 彩色图 |
+| `depth_image.png` | 对齐的深度图（16 bit 单通道） |
+| `camera_info.txt` | `/camera/color/camera_info` 导出（含 fx, fy, cx, cy） |
+| `camera_info1.txt` | `/camera/depth/camera_info` 导出 |
+| `record*.m4a` | 麦克风录音，如「拿瓶子」 |
 
-# 设置ROS环境
-echo "source /opt/ros/noetic/setup.bash" >> ~/.bashrc
-source ~/.bashrc
+图像、深度、内参、语音应来自**同一次观测**，否则坐标与语义会不匹配。
 
-# 安装Python依赖
-pip3 install numpy opencv-python ultralytics websocket-client
-```
+将整个 `instance/` 目录拷贝到 Atlas：`~/kuavi_robot_control/instance/`。
 
-### 2. 确认昇腾CANN环境
+---
+
+## 第二步：Atlas 200I 语音 + 视觉 + 坐标
+
+### 环境准备（每次新开终端）
 
 ```bash
-# 检查NPU状态
-npu-smi info
-
-# 设置CANN环境变量
-source /usr/local/Ascend/ascend-toolkit/set_env.sh
+cd ~/kuavi_robot_control
+source scripts/activate_kuavi_atlas.sh
 ```
 
-### 3. 模型转换（YOLOv8示例）
+`activate_kuavi_atlas.sh` 会依次：激活 `~/kuavi` venv → source CANN → 配置 `acl` 的 `PYTHONPATH`。
+
+### 运行端到端流水线
 
 ```bash
-# 在PC上导出ONNX
-python -c "from ultralytics import YOLO; YOLO('yolov8n.pt').export(format='onnx')"
-
-# 在开发板上使用ATC工具转换
-atc --model=yolov8n.onnx \
-    --framework=5 \
-    --output=yolov8n \
-    --input_format=NCHW \
-    --soc_version=Ascend310B
+python3 scripts/atlas_voice_grasp_pipeline.py \
+  --asr-config config/asr_atlas_npu.yaml \
+  --vision-config config/vision.yaml \
+  --device npu \
+  --audio instance/record5.m4a
 ```
 
-将生成的 `yolov8n.om` 放入 `ascend_models/` 目录。
+### 流水线内部步骤
 
-### 4. 相机内参获取
+1. **语音识别（ASR）** — 输入 `record*.m4a`，模型 `ascend_models/whisper_encoder.om`（NPU）+ CPU decode，输出如「拿瓶子」。
+2. **语义理解（NLU）** — `vision_lim/semantic_parser.py`，输出 `{"action":"fetch","target":"bottle",...}`，支持同音纠错（如「屏子」→ 瓶子）。
+3. **目标检测（YOLO）** — `ascend_models/yolov8n.om`（NPU，`soc_version=Ascend310B4`），在彩色图中检测 COCO 类别；抓取像素为 bbox 水平中心 + 垂直 65% 偏下。
+4. **坐标转换** — color 像素映射到 depth 像素，深度邻域中值采样，反投影到 **camera optical 坐标系（米）**，写入 `camera_coord_m`。
+
+### 输出文件
+
+- `instance/grasp_target.json`
+- `scripts/grasp_target.json`（副本，便于 scp）
+
+```json
+{
+  "voice_transcript": "拿瓶子",
+  "voice_task": { "action": "fetch", "target": "bottle" },
+  "yolo_backend": "npu",
+  "camera_coord_m": [-0.213, 0.074, 0.582],
+  "pixel_color": [178, 298],
+  "pixel_depth": [181, 286],
+  "depth_m": 0.582
+}
+```
+
+下位机抓取脚本**仅依赖** `camera_coord_m`；其余字段供调试与记录。
+
+### 常用调试参数
 
 ```bash
-# 订阅camera_info话题获取内参
-rostopic echo /camera/color/camera_info
+# 跳过 ASR，直接指定中文测视觉+坐标
+python3 scripts/atlas_voice_grasp_pipeline.py \
+  --text "拿瓶子" --device npu
+
+# 指定输出路径
+python3 scripts/atlas_voice_grasp_pipeline.py \
+  --output instance/grasp_target.json \
+  --audio instance/record5.m4a
 ```
 
-### 5. 手眼标定
+---
 
-参考 `calibration/` 目录下的标定指南，完成相机到机械臂基座的坐标变换矩阵标定。
+## 第三步：下位机载入控制脚本并抓取
 
-## 使用方法
+### 拷贝文件
 
-### 启动机器人底盘与机械臂
+```text
+kuavo-ros-opensource/scripts/
+├── grasp_from_offline_vision.py   # 自 Kuavi_bot_control/scripts/
+└── grasp_target.json              # 自 Atlas 输出
+```
 
-确保机器人已上电，网络连接正常。
-
-### 运行主程序
+### 环境
 
 ```bash
-# 进入工作目录
-cd /home/HwHiAiUser
-
-# 启动系统（示例）
-python3 robot_control/main.py
+source /opt/ros/noetic/setup.bash
+source /home/lab/kuavo-ros-opensource/devel/setup.bash
+cd /home/lab/kuavo-ros-opensource/scripts
 ```
 
-### 语音指令示例
+### 预览坐标（不动作）
 
-| 指令 | 预期行为 |
-|------|----------|
-| "小助小助，把红色的杯子拿给我" | 识别红色杯子，移动到目标位置，抓取并递送 |
-| "小助小助，拿那个手机" | 检测手机，抓取并递送 |
-| "小助小助，停止" | 停止当前任务，手臂归位 |
+```bash
+python3 grasp_from_offline_vision.py \
+  --hand left \
+  --dry-coords \
+  --grasp-json grasp_target.json
+```
 
-## 核心算法说明
+### 实机抓取
 
-### 图像到3D坐标转换
+```bash
+python3 grasp_from_offline_vision.py \
+  --hand left \
+  --grasp-json grasp_target.json
+```
 
-1. **目标检测**：YOLOv8n 输出物体中心像素坐标 `(u, v)`
-2. **深度获取**：从深度图对应位置读取深度值 `Z`（单位：米）
-3. **相机坐标**：利用内参 `(fx, fy, cx, cy)` 转换为相机坐标系：
+### 下位机控制逻辑
+
+| 阶段 | 行为 |
+|------|------|
+| 接近 | 左上方 → 平移至物品正上方 → 垂直下降（抓取姿态 IK） |
+| 抓取 | 闭合 `left_claw` |
+| 展示 | 分两段垂直上提至正上方，短暂停留 |
+| 安全放开 | 下放回抓取高度 → **水平后撤** → 松爪 → 上提 → 双臂回零 |
+
+位姿偏置、三段位姿距离、上提高度等均在 `scripts/grasp_from_offline_vision.py` 顶部 **用户参数区** 调整；修改后先 `--dry-coords` 再实机。
+
+---
+
+## 坐标转换说明
+
+1. YOLO 输出 bbox，取抓取像素 `(u, v)`（color 图）。
+2. 按 color/depth 内参 cx、cy 偏移，映射到 depth 图对应像素。
+3. 在 depth 邻域取中值深度 `Z`（米）。
+4. 利用内参反投影到 camera optical 系：
    ```
    X = (u - cx) * Z / fx
    Y = (v - cy) * Z / fy
    Z = depth_value
    ```
-4. **机械臂坐标**：通过手眼标定矩阵变换到机械臂基座坐标系
+5. 下位机脚本将 camera 坐标变换到机械臂 base 系后做 IK（见 `grasp_from_offline_vision.py`）。
 
-### 机械臂控制流程
+---
 
-1. 切换手臂到外部控制模式：`/arm_traj_change_mode`（mode=2）
-2. 预抓取：移动到物体正上方5cm
-3. 下降：垂直下降到抓取高度
-4. 闭合夹爪：`/control_robot_leju_claw`（position=90）
-5. 上升：提起物品
-6. 移动底盘到递送点
-7. 释放夹爪：`/control_robot_leju_claw`（position=0）
+## 三机协作检查清单
 
-## 故障排查
+- [ ] 上位机：`color/depth` 图与 `camera_info` 成对、时间一致
+- [ ] Atlas：`source scripts/activate_kuavi_atlas.sh` 后 `import acl` 正常
+- [ ] Atlas：流水线日志出现 `yolo_backend: NPU` 与合理 `camera_coord_m`
+- [ ] 下位机：`grasp_target.json` 与脚本在同一 `scripts/` 目录
+- [ ] 下位机：`--dry-coords` 坐标合理后再 `--hand left` 实机
 
-| 问题 | 可能原因 | 解决方法 |
-|------|----------|----------|
-| SSH连接失败 | IP配置错误 | 确认开发板与电脑在同一网段 |
-| 无法上网 | DNS问题 | 配置 `/etc/resolv.conf` 添加 `nameserver 114.114.114.114` |
-| 模型推理失败 | `.om` 模型转换错误 | 确认 `soc_version` 为 `Ascend310B` |
-| 机器人连接失败 | WebSocket IP错误 | 检查 `config/robot_config.yaml` 中的机器人IP |
-| 深度值为0 | 物体材质反光 | 调整物体位置或使用周围有效深度中位数 |
-| 抓取位置偏差 | 手眼标定不准 | 重新进行手眼标定 |
+## 常见问题
 
-## 参考资料
+| 现象 | 处理 |
+|------|------|
+| Atlas `import acl` 失败 | 重新 `source scripts/activate_kuavi_atlas.sh`；确认 CANN 与 Python 3.9 venv |
+| YOLO 无检测 | 确认 `yolov8n.om` 存在；画面中有目标物体；可降低 `config/vision.yaml` 中 `conf_threshold` |
+| 模型推理失败 | 确认 `soc_version` 为 `Ascend310B4`；详见 [ascend_models/readme.md](ascend_models/readme.md) |
+| 正上方 IK 失败 | 脚本已拆「高位平移 + 下降」；可调 `APPROACH_ABOVE_CLEARANCE_M` |
+| 抓取偏位 | 上位机重新采图；或调 `grasp_from_offline_vision.py` 中 `LEFT_GRASP_*_BIAS` |
+| 深度值为 0 | 物体反光或超出量程；检查 depth 图对应像素，或调整采样邻域 |
+| 松爪带倒物体 | 使用内置「水平后撤后再松爪」流程，勿在抓取点原位直接张开 |
 
-## 待完成功能
+## 相关文档
 
-- [ ] 完整的多物体抓取测试
-- [ ] 性能优化与延迟降低
-- [ ] 更多物体类型的模型训练
+| 文档 | 内容 |
+|------|------|
+| [vision_lim/readme.md](vision_lim/readme.md) | 视觉 / 语音模块细节 |
+| [ascend_models/readme.md](ascend_models/readme.md) | ONNX → OM 转换 |
+| [robot_control/interface.md](robot_control/interface.md) | Kuavo ROS 接口（IK、夹爪、arm_traj） |
+| [scripts/grasp_from_offline_vision.py](scripts/grasp_from_offline_vision.py) | 下位机抓取实现与参数 |
 
-## 联系方式
+## 版本说明
 
-- 项目负责人：郭隶楷、何柳岩、李思远、张竹和
+当前文档对应已验证闭环：
+
+- **Atlas**：Whisper encoder NPU + YOLOv8n NPU，`atlas_voice_grasp_pipeline.py` 输出 `grasp_target.json`
+- **下位机**：`grasp_from_offline_vision.py` 左手三段位姿抓取 + 安全放开 + 回零
+
+后续若改为 ROS 话题实时传图，可在上位机与 Atlas 之间增加同步节点，**JSON 接口与下位机脚本保持不变**。
