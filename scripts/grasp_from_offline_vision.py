@@ -72,10 +72,15 @@ RETREAT_LIFT_Z = 0.05
 # 优先用 APPROACH_ABOVE_Z_TARGET（base 绝对高度）；为 None 时用相对偏移 APPROACH_ABOVE_Z
 APPROACH_ABOVE_Z_TARGET = -0.145
 APPROACH_ABOVE_Z = 0.30
-# 第一段「左上方」：相对抓取点在 base Y 方向外扩（left 手 +Y，right 手 -Y），Z 与正上方同高
+# 第一段「左上方」：须与正上方在 X/Y/Z 上均有明显差值，否则从待机位看去像直达正上方
 USE_THREE_STAGE_APPROACH = True
-APPROACH_UPPER_LEFT_LATERAL_M = 0.10
-APPROACH_UPPER_LEFT_BACK_M = 0.0
+APPROACH_UPPER_LEFT_LATERAL_M = 0.22   # left 手 +Y 外扩（更靠机器人左侧）
+APPROACH_UPPER_LEFT_BACK_M = 0.10      # -X 后退，从瓶身左后上方切入
+APPROACH_UPPER_LEFT_EXTRA_Z = 0.12     # 比正上方再高一段，形成「高→低→抓」
+APPROACH_STAGE_HOLD_S = 2.0            # 每段到位后停顿 (s)，便于观察
+APPROACH_STAGE1_DURATION_S = 5.0
+APPROACH_STAGE2_DURATION_S = 3.5
+APPROACH_STAGE3_DURATION_S = 2.5
 # 夹紧后上提：与上方就位同高（APPROACH_ABOVE_Z_TARGET）；否则用相对偏移 POST_GRASP_LIFT_Z
 POST_GRASP_LIFT_MATCH_APPROACH = True
 POST_GRASP_LIFT_Z = 0.22
@@ -151,6 +156,7 @@ def _build_config_dict() -> Dict:
             "use_three_stage_approach": USE_THREE_STAGE_APPROACH,
             "approach_upper_left_lateral_m": APPROACH_UPPER_LEFT_LATERAL_M,
             "approach_upper_left_back_m": APPROACH_UPPER_LEFT_BACK_M,
+            "approach_upper_left_extra_z": APPROACH_UPPER_LEFT_EXTRA_Z,
             "post_grasp_lift_z": POST_GRASP_LIFT_Z,
             "post_grasp_lift_match_approach": POST_GRASP_LIFT_MATCH_APPROACH,
         },
@@ -261,14 +267,15 @@ def resolve_grasp_poses_arm_base(
     retreat = (grasp[0] - ret_back, grasp[1], lift[2] + ret_lift)
 
     use_three = bool(off.get("use_three_stage_approach", True))
-    lateral = float(off.get("approach_upper_left_lateral_m", 0.10))
-    back_m = float(off.get("approach_upper_left_back_m", 0.0))
+    lateral = float(off.get("approach_upper_left_lateral_m", 0.22))
+    back_m = float(off.get("approach_upper_left_back_m", 0.10))
+    extra_z = float(off.get("approach_upper_left_extra_z", 0.12))
     lat_sign = 1.0 if hand == "left" else -1.0
     if use_three:
         approach_upper_left = (
             grasp[0] - back_m,
             grasp[1] + lat_sign * lateral,
-            approach_above[2],
+            approach_above[2] + extra_z,
         )
     else:
         approach_upper_left = approach_above
@@ -490,8 +497,18 @@ def _publish_arm_traj(q_rad, duration: float) -> None:
     rospy.sleep(duration)
 
 
+def _log_waypoint_delta(a: tuple, b: tuple, label: str) -> None:
+    dx = b[0] - a[0]
+    dy = b[1] - a[1]
+    dz = b[2] - a[2]
+    dist = math.sqrt(dx * dx + dy * dy + dz * dz)
+    _log(f"[路径] {label}: ΔX={dx:+.3f} ΔY={dy:+.3f} ΔZ={dz:+.3f} 距离={dist:.3f}m")
+
+
 def _move_to(ik_proxy, arm_pub, pos, hand: str, duration: float, label: str,
-             use_target_poses: bool) -> bool:
+             use_target_poses: bool, hold_s: float = 0.0) -> bool:
+    import rospy
+
     _log(f"[运动] {label} -> ({pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f})")
     q = _solve_ik(ik_proxy, pos, hand)
     if q is None:
@@ -500,6 +517,9 @@ def _move_to(ik_proxy, arm_pub, pos, hand: str, duration: float, label: str,
         _publish_arm_timed(arm_pub, q, duration)
     else:
         _publish_arm_traj(q, duration)
+    if hold_s > 0.0:
+        _log(f"[运动] {label} 到位，保持 {hold_s:.1f}s ...")
+        rospy.sleep(hold_s)
     return True
 
 
@@ -565,6 +585,8 @@ def _apply_grasp_coordinates(camera_point: tuple, hand: str) -> None:
     _log(f"[坐标] 预抓取 (m): {PRE_GRASP}")
     if USE_THREE_STAGE_APPROACH:
         _log(f"[坐标] 左上方就位 (m): {APPROACH_UPPER_LEFT}")
+        _log_waypoint_delta(APPROACH_UPPER_LEFT, APPROACH_ABOVE, "左上方→正上方")
+        _log_waypoint_delta(APPROACH_ABOVE, GRASP_POS, "正上方→抓取点")
     _log(f"[坐标] 正上方就位 (m): {APPROACH_ABOVE}")
     _log(f"[坐标] 上提 (m): {LIFT_POS}")
     _log(f"[坐标] 后撤 (m): {RETREAT}")
@@ -584,7 +606,12 @@ def run_grasp(hand: str, grasp_width: int, grasp_effort: float,
     if hand == "left":
         _log("[策略] --hand left：左手 IK 双臂运动，抓取由 left_claw 开合")
     if USE_THREE_STAGE_APPROACH:
-        _log("[策略] 三段位姿：左上方 → 正上方 → 垂直下降 → 闭合 → 上提 → 后撤")
+        _log("[策略] 三段位姿：左上方(高+左+后) → 正上方 → 垂直下降 → 闭合 → 上提 → 后撤")
+        _log(
+            f"[策略] 段间停顿 {APPROACH_STAGE_HOLD_S}s；"
+            f"偏移 lateral={APPROACH_UPPER_LEFT_LATERAL_M}m "
+            f"back={APPROACH_UPPER_LEFT_BACK_M}m extra_z={APPROACH_UPPER_LEFT_EXTRA_Z}m"
+        )
     else:
         _log("[策略] 垂直流程：正上方 → 下降抓取 → 闭合 → 向上提起 → 后撤")
 
@@ -611,19 +638,35 @@ def run_grasp(hand: str, grasp_width: int, grasp_effort: float,
         _claw_cmd(claw_hand, 0)
         rospy.sleep(0.8)
 
+    hold = APPROACH_STAGE_HOLD_S if USE_THREE_STAGE_APPROACH else 0.0
+
     if USE_PRE_GRASP and not USE_THREE_STAGE_APPROACH:
         if not _move_to(ik_proxy, arm_pub, PRE_GRASP, hand, 2.0, "后方就位", use_target_poses):
             return False
     if USE_THREE_STAGE_APPROACH:
+        _log("========== 第 1/3 段：左上方（高 + 左 + 后） ==========")
         if not _move_to(
-            ik_proxy, arm_pub, APPROACH_UPPER_LEFT, hand, 3.0,
-            "左上方就位", use_target_poses,
+            ik_proxy, arm_pub, APPROACH_UPPER_LEFT, hand, APPROACH_STAGE1_DURATION_S,
+            "左上方就位", use_target_poses, hold_s=hold,
         ):
             return False
-    if not _move_to(ik_proxy, arm_pub, APPROACH_ABOVE, hand, 2.5, "正上方就位", use_target_poses):
-        return False
-    if not _move_to(ik_proxy, arm_pub, GRASP_POS, hand, 2.5, "垂直下降抓取", use_target_poses):
-        return False
+        _log("========== 第 2/3 段：平移至正上方 ==========")
+        if not _move_to(
+            ik_proxy, arm_pub, APPROACH_ABOVE, hand, APPROACH_STAGE2_DURATION_S,
+            "正上方就位", use_target_poses, hold_s=hold,
+        ):
+            return False
+        _log("========== 第 3/3 段：垂直下降抓取 ==========")
+        if not _move_to(
+            ik_proxy, arm_pub, GRASP_POS, hand, APPROACH_STAGE3_DURATION_S,
+            "垂直下降抓取", use_target_poses,
+        ):
+            return False
+    else:
+        if not _move_to(ik_proxy, arm_pub, APPROACH_ABOVE, hand, 3.5, "正上方就位", use_target_poses):
+            return False
+        if not _move_to(ik_proxy, arm_pub, GRASP_POS, hand, 3.5, "垂直下降抓取", use_target_poses):
+            return False
 
     if not skip_gripper:
         _claw_cmd(claw_hand, grasp_width, effort=grasp_effort)
