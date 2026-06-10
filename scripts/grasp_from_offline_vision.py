@@ -86,6 +86,10 @@ APPROACH_STAGE_HOLD_S = 2.0            # 每段到位后停顿 (s)，便于观�
 APPROACH_STAGE1_DURATION_S = 5.0
 APPROACH_STAGE2_DURATION_S = 3.5
 APPROACH_STAGE3_DURATION_S = 2.5
+# 靠近瓶子：全程夹爪水平（掌心朝下），到位后再切换抓取姿态闭合
+APPROACH_USE_PALM_DOWN = True
+SWITCH_TO_GRASP_AT_CONTACT = True
+GRASP_POSE_SWITCH_DURATION_S = 1.0
 # 夹紧后上提：与上方就位同高（APPROACH_ABOVE_Z_TARGET）；否则用相对偏移 POST_GRASP_LIFT_Z
 POST_GRASP_LIFT_MATCH_APPROACH = True
 POST_GRASP_LIFT_Z = 0.22
@@ -423,6 +427,10 @@ def _resolve_ik_proxy():
             _log(f"[IK] 不可用 {name}: {e}")
     raise RuntimeError(f"未找到 IK 服务: {last_err}")
 
+def _approach_orientation() -> str:
+    return "palm_down" if APPROACH_USE_PALM_DOWN else "grasp"
+
+
 def _solve_ik(ik_proxy, pos, hand: str, *, orientation: str = "grasp", use_prev_q0: bool = True):
     global _LAST_IK_Q_ARM
     import numpy as np
@@ -714,11 +722,10 @@ def run_grasp(hand: str, grasp_width: int, grasp_effort: float,
     if hand == "left":
         _log("[策略] --hand left：左手 IK 双臂运动，抓取由 left_claw 开合")
     if USE_THREE_STAGE_APPROACH:
-        _log("[策略] 三段位姿：左上方 → 正上方 → 下降 → 闭合 → 水平后撤放开 → 上提 → 回零")
+        _log("[策略] 三段位姿：左上方 → 正上方 → 水平姿态下降 → 切换抓取 → 闭合 → 水平后撤放开 → 上提 → 回零")
         _log(
-            f"[策略] 段间停顿 {APPROACH_STAGE_HOLD_S}s；"
-            f"偏移 lateral={APPROACH_UPPER_LEFT_LATERAL_M}m "
-            f"back={APPROACH_UPPER_LEFT_BACK_M}m extra_z={APPROACH_UPPER_LEFT_EXTRA_Z}m"
+            f"[策略] 靠近姿态: {'掌心朝下(水平)' if APPROACH_USE_PALM_DOWN else '抓取姿态'}；"
+            f"段间停顿 {APPROACH_STAGE_HOLD_S}s"
         )
     else:
         _log("[策略] 垂直流程：正上方 → 下降抓取 → 闭合 → 向上提起 → 后撤")
@@ -751,39 +758,61 @@ def run_grasp(hand: str, grasp_width: int, grasp_effort: float,
         rospy.sleep(0.8)
 
     hold = APPROACH_STAGE_HOLD_S if USE_THREE_STAGE_APPROACH else 0.0
+    approach_orient = _approach_orientation()
 
     if USE_PRE_GRASP and not USE_THREE_STAGE_APPROACH:
-        if not _move_to(ik_proxy, arm_pub, PRE_GRASP, hand, 2.0, "后方就位", use_target_poses):
-            return False
-    if USE_THREE_STAGE_APPROACH:
-        _log("========== 第 1/3 段：左上方（高 + 左 + 后） ==========")
         if not _move_to(
-            ik_proxy, arm_pub, APPROACH_UPPER_LEFT, hand, APPROACH_STAGE1_DURATION_S,
-            "左上方就位", use_target_poses, hold_s=hold, orientation="palm_down",
+            ik_proxy, arm_pub, PRE_GRASP, hand, 2.0, "后方就位",
+            use_target_poses, orientation=approach_orient,
         ):
             return False
-        _log("========== 第 2/3 段：平移至正上方并下降就位 ==========")
+    if USE_THREE_STAGE_APPROACH:
+        _log("========== 第 1/3 段：左上方（高 + 左 + 后，水平姿态） ==========")
+        if not _move_to(
+            ik_proxy, arm_pub, APPROACH_UPPER_LEFT, hand, APPROACH_STAGE1_DURATION_S,
+            "左上方就位", use_target_poses, hold_s=hold, orientation=approach_orient,
+        ):
+            return False
+        _log("========== 第 2/3 段：平移至正上方并下降就位（水平姿态） ==========")
         if not _move_to(
             ik_proxy, arm_pub, APPROACH_ABOVE_TRANSIT, hand, APPROACH_STAGE2_DURATION_S * 0.6,
-            "正上方平移(高位)", use_target_poses, orientation="palm_down",
+            "正上方平移(高位)", use_target_poses, orientation=approach_orient,
         ):
             return False
         if not _move_to(
             ik_proxy, arm_pub, APPROACH_ABOVE, hand, APPROACH_STAGE2_DURATION_S * 0.4,
-            "正上方就位", use_target_poses, hold_s=hold, orientation="palm_down",
+            "正上方就位", use_target_poses, hold_s=hold, orientation=approach_orient,
         ):
             return False
-        _log("========== 第 3/3 段：垂直下降抓取 ==========")
+        _log("========== 第 3/3 段：水平姿态垂直下降 ==========")
         if not _move_to(
             ik_proxy, arm_pub, GRASP_POS, hand, APPROACH_STAGE3_DURATION_S,
-            "垂直下降抓取", use_target_poses, orientation="grasp",
+            "水平姿态下降", use_target_poses, orientation=approach_orient,
         ):
             return False
+        if SWITCH_TO_GRASP_AT_CONTACT and APPROACH_USE_PALM_DOWN:
+            if not _move_to(
+                ik_proxy, arm_pub, GRASP_POS, hand, GRASP_POSE_SWITCH_DURATION_S,
+                "切换抓取姿态", use_target_poses, orientation="grasp",
+            ):
+                return False
     else:
-        if not _move_to(ik_proxy, arm_pub, APPROACH_ABOVE, hand, 3.5, "正上方就位", use_target_poses):
+        if not _move_to(
+            ik_proxy, arm_pub, APPROACH_ABOVE, hand, 3.5, "正上方就位",
+            use_target_poses, orientation=approach_orient,
+        ):
             return False
-        if not _move_to(ik_proxy, arm_pub, GRASP_POS, hand, 3.5, "垂直下降抓取", use_target_poses):
+        if not _move_to(
+            ik_proxy, arm_pub, GRASP_POS, hand, 3.5, "水平姿态下降",
+            use_target_poses, orientation=approach_orient,
+        ):
             return False
+        if SWITCH_TO_GRASP_AT_CONTACT and APPROACH_USE_PALM_DOWN:
+            if not _move_to(
+                ik_proxy, arm_pub, GRASP_POS, hand, GRASP_POSE_SWITCH_DURATION_S,
+                "切换抓取姿态", use_target_poses, orientation="grasp",
+            ):
+                return False
 
     if not skip_gripper:
         _claw_cmd(claw_hand, grasp_width, effort=grasp_effort)
@@ -793,7 +822,7 @@ def run_grasp(hand: str, grasp_width: int, grasp_effort: float,
         _log("========== 放开：水平后撤（保持抓取高度） ==========")
         if not _move_to(
             ik_proxy, arm_pub, RELEASE_RETREAT, hand, RELEASE_RETREAT_DURATION_S,
-            "水平后撤", use_target_poses, orientation="grasp",
+            "水平后撤", use_target_poses, orientation=approach_orient,
         ):
             return False
         if not skip_gripper:
@@ -802,7 +831,7 @@ def run_grasp(hand: str, grasp_width: int, grasp_effort: float,
         _log("========== 松爪后上提 ==========")
         if not _move_to(
             ik_proxy, arm_pub, RELEASE_LIFT, hand, RELEASE_LIFT_DURATION_S,
-            "松爪后上提", use_target_poses, orientation="grasp",
+            "松爪后上提", use_target_poses, orientation=approach_orient,
         ):
             return False
     else:
