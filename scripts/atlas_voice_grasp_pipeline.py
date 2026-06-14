@@ -43,6 +43,7 @@ from vision_lim.yolo_detect import detect_target_yolo
 
 
 def _log(msg: str) -> None:
+    """打印带 flush 的流水线日志。"""
     print(msg, flush=True)
 
 
@@ -68,6 +69,7 @@ def _ensure_wav(audio_path: Path) -> Path:
 
 
 def depth_at(depth: np.ndarray, u: int, v: int, r: int = 4) -> float:
+    """在 (u,v) 周围 r 像素邻域取有效深度中位数（与深度图单位一致）。"""
     vals: List[float] = []
     for du in range(-r, r + 1):
         for dv in range(-r, r + 1):
@@ -84,6 +86,7 @@ def depth_at(depth: np.ndarray, u: int, v: int, r: int = 4) -> float:
 def color_pixel_to_depth_pixel(
     u_c: int, v_c: int, color_ci: Dict, depth_di: Dict
 ) -> Tuple[int, int]:
+    """彩色像素映射到深度图像素（按两相机主点 cx/cy 差值对齐）。"""
     u_d = int(round(u_c + (depth_di["cx"] - color_ci["cx"])))
     v_d = int(round(v_c + (depth_di["cy"] - color_ci["cy"])))
     return u_d, v_d
@@ -108,6 +111,7 @@ def sample_depth_mm(
 def camera_coord_from_pixels(
     u_d: int, v_d: int, depth_mm: float, depth_di: Dict
 ) -> Tuple[float, float, float]:
+    """深度相机像素 + 深度(mm) → optical 系坐标 (m)。"""
     z = depth_mm / 1000.0
     x = (u_d - depth_di["cx"]) * z / depth_di["fx"]
     y = (v_d - depth_di["cy"]) * z / depth_di["fy"]
@@ -138,6 +142,7 @@ def run_pipeline(
     vertical_ratio: float,
     text_override: Optional[str],
 ) -> Dict:
+    """端到端离线流水线：语音解析 → YOLO 检测 → 深度采样 → 写出 grasp_target.json。"""
     # --- 1. 语音 → 任务 JSON ---
     if text_override:
         from vision_lim.semantic_parser import parse_instruction
@@ -194,6 +199,8 @@ def run_pipeline(
     )
 
     x1, y1, x2, y2 = detection["bbox"]
+
+    # --- 4. 深度采样 → camera_coord_m → JSON ---
     u_c, v_c = grasp_pixel_from_bbox(x1, y1, x2, y2, vertical_ratio=vertical_ratio)
     u_d0, v_d0 = color_pixel_to_depth_pixel(u_c, v_c, color_ci, depth_di)
     depth_mm, u_d, v_d = sample_depth_mm(depth, u_d0, v_d0)

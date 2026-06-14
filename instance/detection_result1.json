@@ -1,0 +1,35 @@
+{
+  "image": "color_image1.png",
+  "target_class": "bottle",
+  "yolo_backend": "cpu",
+  "detection": {
+    "class_name": "cup",
+    "confidence": 0.552780032157898,
+    "bbox": [
+      23,
+      309,
+      132,
+      413
+    ],
+    "bbox_center": [
+      77,
+      361
+    ]
+  },
+  "grasp_pixel_color": [
+    77,
+    376
+  ],
+  "vertical_ratio": 0.65,
+  "note": "语音目标 bottle 未检出，使用 YOLO 类别 cup",
+  "pixel_depth": [
+    74,
+    364
+  ],
+  "depth_m": 0.535,
+  "camera_coord_m": [
+    -0.3423,
+    0.1745,
+    0.535
+  ]
+}

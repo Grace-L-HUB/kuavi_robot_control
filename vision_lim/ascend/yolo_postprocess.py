@@ -8,6 +8,7 @@ import cv2
 import numpy as np
 
 from .coco_names import COCO80
+from ..target_synonyms import matches_target_class
 
 INPUT_SIZE = (640, 640)
 
@@ -126,10 +127,10 @@ def best_detection_for_class(
     detections: List[Dict],
     target_class: str,
 ) -> Optional[Dict]:
-    target = target_class.lower().strip()
+    """从检测列表中选取与目标类（含同义）匹配且置信度最高的框。"""
     best = None
     for det in detections:
-        if det["class_name"] != target:
+        if not matches_target_class(det["class_name"], target_class):
             continue
         if best is None or det["confidence"] > best["confidence"]:
             best = det

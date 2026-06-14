@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Dict, Optional
 
 from .ascend import can_use_yolo_npu, get_yolo_npu_detector
+from .target_synonyms import matches_target_class
 from .vision_config import load_vision_config, resolve_yolo_backend
 
 
@@ -52,6 +53,24 @@ def detect_target_yolo(
     ), "cpu"
 
 
+def _bbox_to_detection(
+    class_name: str,
+    confidence: float,
+    x1: int,
+    y1: int,
+    x2: int,
+    y2: int,
+) -> Dict:
+    """将单框检测结果转为统一字典格式。"""
+    u, v = int((x1 + x2) / 2), int((y1 + y2) / 2)
+    return {
+        "class_name": class_name,
+        "confidence": confidence,
+        "bbox": [x1, y1, x2, y2],
+        "bbox_center": [u, v],
+    }
+
+
 def _detect_ultralytics(
     color_bgr,
     target_class: str,
@@ -59,6 +78,7 @@ def _detect_ultralytics(
     conf_threshold: float,
     iou_threshold: float,
 ) -> Optional[Dict]:
+    """CPU 回退：ultralytics YOLO，返回置信度最高的同义匹配框。"""
     try:
         from ultralytics import YOLO
     except ImportError as e:
@@ -77,7 +97,6 @@ def _detect_ultralytics(
 
     result = results[0]
     names = result.names or {}
-    target = target_class.lower().strip()
     best = None
     boxes = result.boxes
     if boxes is None:
@@ -87,17 +106,11 @@ def _detect_ultralytics(
         cls_id = int(box.cls[0])
         conf = float(box.conf[0])
         class_name = str(names.get(cls_id, f"class_{cls_id}")).lower()
-        if class_name != target:
+        if not matches_target_class(class_name, target_class):
             continue
         x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
         x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
-        u, v = int((x1 + x2) / 2), int((y1 + y2) / 2)
-        det = {
-            "class_name": class_name,
-            "confidence": conf,
-            "bbox": [x1, y1, x2, y2],
-            "bbox_center": [u, v],
-        }
+        det = _bbox_to_detection(class_name, conf, x1, y1, x2, y2)
         if best is None or conf > best["confidence"]:
             best = det
     return best

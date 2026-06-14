@@ -21,8 +21,9 @@ _COLOR_CN = {
 }
 
 _OBJECT_CN = {
-    "杯子": "cup",
-    "杯": "cup",
+    # 杯/瓶在抓取任务中同义，统一映射为 bottle（YOLO 侧 cup/bottle 均可匹配）
+    "杯子": "bottle",
+    "杯": "bottle",
     "球": "ball",
     "手机": "phone",
     "水瓶": "bottle",

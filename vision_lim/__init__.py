@@ -36,6 +36,7 @@ from .camera_info_parser import (
     parse_camera_info_file,
     load_intrinsics_from_camera_info_files,
 )
+from .target_synonyms import expand_target_class, matches_target_class
 from .vision_pipeline import (
     VisionPipeline,
     VoiceCommand,
@@ -74,6 +75,9 @@ __all__ = [
     "camera_to_arm_base",
     "parse_camera_info_file",
     "load_intrinsics_from_camera_info_files",
+    # 目标类别同义匹配
+    "expand_target_class",
+    "matches_target_class",
     # 新的流水线模块
     "VisionPipeline",
     "VoiceCommand",

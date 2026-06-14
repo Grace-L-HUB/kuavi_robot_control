@@ -45,6 +45,7 @@ try:
     )
     from .semantic_parser import parse_instruction
     from .speech_recognition import transcribe_file
+    from .target_synonyms import matches_target_class
     VISION_MODULES_AVAILABLE = True
 except ImportError as e:
     logger.warning(f"Some vision modules not available: {e}")
@@ -251,10 +252,10 @@ class VisionPipeline:
             # 目标检测
             detections = self._detector.detect_once(color_img)
 
-            # 筛选目标类别
+            # 筛选目标类别（含同义组，如 bottle/cup）
             matching = [
                 d for d in detections
-                if d.class_name.lower() == target_class.lower()
+                if matches_target_class(d.class_name, target_class)
             ]
 
             if not matching:

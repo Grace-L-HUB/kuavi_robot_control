@@ -1,7 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(python scripts/test_action_model.py)"
-    ]
-  }
-}

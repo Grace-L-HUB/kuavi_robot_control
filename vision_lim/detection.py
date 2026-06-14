@@ -9,6 +9,8 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 
+from .target_synonyms import matches_target_class
+
 logger = logging.getLogger(__name__)
 
 # ROS相关导入（可选，运行时检查）
@@ -543,10 +545,12 @@ class ObjectDetectionNode:
         if not detections:
             return None
 
-        # 过滤匹配的类别
-        matching = [d for d in detections
-                    if d.class_name.lower() == target_class.lower()
-                    and d.confidence >= min_confidence]
+        # 过滤匹配的类别（含同义组，如 bottle/cup）
+        matching = [
+            d for d in detections
+            if matches_target_class(d.class_name, target_class)
+            and d.confidence >= min_confidence
+        ]
 
         if not matching:
             return None

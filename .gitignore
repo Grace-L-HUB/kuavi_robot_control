@@ -24,3 +24,11 @@ Thumbs.db
 
 # Logs
 *.log
+
+# IDE / local agent
+.claude/
+robot_control/.claude/
+
+# 临时测试产物
+instance/grasp_target_test*.json
+instance/dry_coords*.txt

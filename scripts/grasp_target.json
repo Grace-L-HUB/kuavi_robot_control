@@ -1,13 +1,40 @@
 {
-  "pixel_color": [178, 298],
-  "pixel_depth": [181, 286],
-  "depth_m": 0.582,
-  "camera_coord_m": [-0.213, 0.074, 0.582],
+  "voice_transcript": "拿瓶子",
+  "voice_task": {
+    "action": "fetch",
+    "target": "bottle",
+    "attribute": null,
+    "location": null
+  },
+  "yolo_backend": "cpu",
+  "detection_confidence": 0.5528,
+  "bbox_color": [
+    23,
+    309,
+    132,
+    413
+  ],
+  "pixel_color": [
+    77,
+    376
+  ],
+  "pixel_depth": [
+    74,
+    364
+  ],
+  "depth_m": 0.535,
+  "camera_coord_m": [
+    -0.3423,
+    0.1745,
+    0.535
+  ],
   "color_intrinsics": {
     "fx": 605.215087890625,
     "fy": 604.91943359375,
     "cx": 321.31610107421875,
     "cy": 248.95516967773438,
+    "width": 0,
+    "height": 0,
     "frame_id": "camera_color_optical_frame"
   },
   "depth_intrinsics": {
@@ -15,7 +42,9 @@
     "fy": 390.8797607421875,
     "cx": 324.0746765136719,
     "cy": 236.543701171875,
+    "width": 0,
+    "height": 0,
     "frame_id": "camera_depth_optical_frame"
   },
-  "note": "新水瓶位置：书上左侧，color(178,298)中心偏下，depth内参反投影"
+  "note": "Atlas pipeline (ASR+NPU/CPU, YOLO=cpu): bottle → camera_coord_m; vertical_ratio=0.65"
 }

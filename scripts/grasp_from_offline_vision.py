@@ -167,12 +167,17 @@ ACTIVE_GRASP_QUAT = list(GRASP_QUAT_RIGHT)
 _LAST_IK_Q_ARM: Optional[List[float]] = None
 
 
+# =============================================================================
+# 坐标解算：camera optical (m) → base_link 路径点
+# =============================================================================
+
 def _grasp_claw_hand(hand: str) -> str:
     """抓取侧夹爪与 --hand 一致（left 模式闭合 left_claw）。"""
     return hand
 
 
 def _build_config_dict() -> Dict:
+    """将顶部用户参数区打包为坐标解算模块可读的配置字典。"""
     return {
         "static_transform": {
             "pitch_deg": PITCH_DEG,
@@ -284,6 +289,7 @@ def resolve_grasp_poses_arm_base(
     point_cam: Tuple[float, float, float],
     hand: str = "right",
 ) -> Dict:
+    """将相机 optical 坐标转为机械臂 base 系下各路径点（预抓取、接近、抓取、后撤等）。"""
     cfg = _build_config_dict()
     st = cfg["static_transform"]
     off = cfg["grasp_offsets"]
@@ -364,6 +370,10 @@ def resolve_grasp_poses_arm_base(
         "inactive_arm_pose": get_inactive_arm_pose(hand),
     }
 
+
+# =============================================================================
+# ROS 控制：环境检查、IK、轨迹发布、夹爪
+# =============================================================================
 
 def _log(msg: str) -> None:
     print(msg, flush=True)
@@ -659,6 +669,7 @@ def _finish_release_and_home(
 
 
 def _log_waypoint_delta(a: tuple, b: tuple, label: str) -> None:
+    """打印两路径点之间的位移与欧氏距离，便于 dry-coords 调参。"""
     dx = b[0] - a[0]
     dy = b[1] - a[1]
     dz = b[2] - a[2]
@@ -668,6 +679,7 @@ def _log_waypoint_delta(a: tuple, b: tuple, label: str) -> None:
 
 def _move_to(ik_proxy, arm_pub, pos, hand: str, duration: float, label: str,
              use_target_poses: bool, hold_s: float = 0.0) -> bool:
+    """IK 求解并发布单段手臂运动；失败返回 False。"""
     import rospy
 
     _log(f"[运动] {label} -> ({pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f})")
@@ -713,6 +725,7 @@ def _claw_cmd(hand: str, position: int, velocity: int = GRASP_CLAW_VELOCITY,
 
 
 def _load_camera_point_from_json(path: Path) -> tuple:
+    """从 grasp_target.json 读取 camera_coord_m。"""
     data = json.loads(path.read_text(encoding="utf-8"))
     cc = data.get("camera_coord_m")
     if cc and len(cc) >= 3:
@@ -721,6 +734,7 @@ def _load_camera_point_from_json(path: Path) -> tuple:
 
 
 def _apply_grasp_coordinates(camera_point: tuple, hand: str) -> None:
+    """根据相机坐标填充全局路径点，并打印 dry-coords 日志。"""
     global PRE_GRASP, APPROACH_UPPER_LEFT, APPROACH_ABOVE_TRANSIT, APPROACH_ABOVE, SAFE_HOVER
     global GRASP_POS, POST_GRASP_LIFT_MID, POST_GRASP_LIFT, RELEASE_RETREAT, RELEASE_LIFT, LIFT_POS, RETREAT
     global ACTIVE_GRASP_QUAT, INACTIVE_LEFT_POS, INACTIVE_RIGHT_POS
@@ -783,6 +797,7 @@ def _apply_grasp_coordinates(camera_point: tuple, hand: str) -> None:
 def run_grasp(hand: str, grasp_width: int, grasp_effort: float,
               skip_gripper: bool, skip_arm_mode: bool,
               camera_point: tuple) -> bool:
+    """执行完整抓取流程：接近 → 夹取 → 展示 → 安全放开 → 回零。"""
     global _LAST_IK_Q_ARM
     import rospy
 
@@ -791,6 +806,7 @@ def run_grasp(hand: str, grasp_width: int, grasp_effort: float,
     rospy.init_node("grasp_from_offline_vision", anonymous=True)
     _apply_grasp_coordinates(camera_point, hand)
 
+    # --- 策略说明 ---
     if hand == "left":
         _log("[策略] --hand left：左手 IK 双臂运动，抓取由 left_claw 开合")
     if USE_THREE_STAGE_APPROACH:
@@ -812,6 +828,7 @@ def run_grasp(hand: str, grasp_width: int, grasp_effort: float,
         _set_arm_mode_external()
         rospy.sleep(0.5)
 
+    # --- 接近段：三段位姿 或 正上方→安全悬停→垂直下降 ---
     use_target_poses = False
     arm_pub = None
     try:
@@ -870,10 +887,12 @@ def run_grasp(hand: str, grasp_width: int, grasp_effort: float,
         if not _move_to(ik_proxy, arm_pub, GRASP_POS, hand, GRASP_DESCENT_DURATION, "纯垂直下降", use_target_poses):
             return False
 
+    # --- 夹取 ---
     if not skip_gripper:
         _claw_cmd(claw_hand, grasp_width, effort=grasp_effort)
         rospy.sleep(1.5)
 
+    # --- 后处理：展示上提 / 安全放开 / 回零 ---
     if POST_GRASP_HORIZONTAL_RELEASE:
         _log("========== 夹紧后上提至正上方（展示抓稳） ==========")
         if not _move_vertical_lift(
@@ -923,6 +942,10 @@ def run_grasp(hand: str, grasp_width: int, grasp_effort: float,
     _log(f"[完成] 抓取流程结束（IK={hand}，夹爪={claw_hand}）")
     return True
 
+
+# =============================================================================
+# 命令行入口
+# =============================================================================
 
 def main() -> int:
     parser = argparse.ArgumentParser(
